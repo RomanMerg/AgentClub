@@ -51,7 +51,12 @@ def main() -> None:
     args = ap.parse_args()
     app = App(args.port)
     app.start()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(app))
+    # no address reuse: on Windows it would let two servers share the port and the old one keep answering
+    ThreadingHTTPServer.allow_reuse_address = False
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(app))
+    except OSError:
+        raise SystemExit(f"Port {args.port} is already in use. Close the other server (an older start.cmd window?) and try again.")
     server.daemon_threads = True
     print(f"Agent Club: http://localhost:{args.port}  (Ctrl+C to stop)")
     try:
