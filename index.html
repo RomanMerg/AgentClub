@@ -1,0 +1,2289 @@
+<meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Agent Club</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@700&family=Fredoka:wght@500;600&display=swap">
+<style>
+/* Layout: full-bleed 3D club; HUD floats in the corners like a Roblox client (chat top-left, legend top-right) */
+:root{
+  --bg:#07060c; --panel:rgba(16,13,26,.82); --ink:#f4effd; --muted:#a8a1bd; --line:rgba(255,255,255,.14);
+  --paper:#fffdf5; --outline:#14121a; --paper-muted:#5d566b;
+  --working:#3ee8ff; --waiting:#ffc53d; --idle:#b98cff; --social:#ff5fa8; --npc:#ece8f4;
+  --display:'Bangers', Impact, 'Arial Black', sans-serif;
+  --comic:'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', cursive;
+  --ui:'Fredoka', 'Trebuchet MS', system-ui, sans-serif;
+  color-scheme: dark;
+}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);overflow:hidden}
+[hidden]{display:none!important}
+#gl{position:fixed;inset:0;display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+#gl:active{cursor:grabbing}
+#overlays{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+
+/* name tag + comic bubble anchored above each head */
+.ov{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;transform-origin:50% 100%;will-change:transform}
+.tag{font:600 12px/1 var(--ui);color:var(--c);white-space:nowrap;margin-top:2px;padding:3px 7px 4px;border-radius:7px;background:rgba(8,6,14,.78);
+  text-shadow:1px 1px 0 #000,-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,0 2px 3px rgba(0,0,0,.6)}
+.bubble{position:relative;background:var(--paper);color:var(--outline);border:2.5px solid var(--outline);border-radius:20px;
+  padding:6px 11px 8px;width:max-content;max-width:178px;font:700 12.5px/1.2 var(--comic);box-shadow:3px 3px 0 var(--outline);
+  margin-bottom:17px;opacity:0;transform:scale(.55) translateY(10px);transform-origin:50% 120%;
+  transition:opacity .22s ease, transform .32s cubic-bezier(.3,1.6,.5,1)}
+.ov.show .bubble{opacity:1;transform:none}
+.ov.pinned .bubble{box-shadow:3px 3px 0 var(--outline),0 0 0 3px var(--c)}
+.ov[data-state="down"] .tag{background:#ff2d2d;color:#fff;text-shadow:none;animation:alarm 1s steps(2,end) infinite}
+.ov[data-state="down"] .chip i{animation:alarm 1s steps(2,end) infinite}
+@keyframes alarm{50%{background:#7a0000}}
+.bubble.think::before,.bubble.think::after{content:'';position:absolute;left:50%;background:var(--paper);border:2.5px solid var(--outline);border-radius:50%}
+.bubble.think::before{width:12px;height:10px;bottom:-14px;margin-left:-13px}
+.bubble.think::after{width:6px;height:6px;bottom:-22px;margin-left:-5px}
+.bubble.say::after{content:'';position:absolute;left:calc(50% - 7px);bottom:-9px;width:13px;height:13px;background:var(--paper);
+  border-right:2.5px solid var(--outline);border-bottom:2.5px solid var(--outline);transform:rotate(45deg) skew(12deg,12deg)}
+.chip{display:flex;align-items:center;gap:5px;font:600 9.5px/1 var(--ui);letter-spacing:.07em;text-transform:uppercase;color:var(--paper-muted);margin-bottom:3px;white-space:nowrap}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--c);border:1.5px solid var(--outline);flex:none}
+.sub{font:700 11px/1.2 var(--comic);color:var(--paper-muted);margin-top:2px}
+.bar{height:6px;border:1.5px solid var(--outline);border-radius:4px;margin-top:5px;overflow:hidden;background:#ece9f2}
+.bar b{display:block;height:100%;width:0;background:var(--c)}
+.zzz{position:absolute;right:-26px;bottom:6px;font:24px/1 var(--display);color:var(--idle);text-shadow:1px 1px 0 #000}
+.zzz span{position:absolute;left:0;bottom:0;opacity:0;animation:zz 3s linear infinite}
+.zzz span:nth-child(2){animation-delay:1s;font-size:18px}
+.zzz span:nth-child(3){animation-delay:2s;font-size:28px}
+@keyframes zz{0%{opacity:0;transform:translate(0,0)}15%{opacity:1}100%{opacity:0;transform:translate(22px,-46px) rotate(12deg)}}
+
+/* Roblox-style chat log */
+#chat{position:fixed;left:12px;top:12px;width:min(340px,calc(100vw - 24px));background:rgba(0,0,0,.45);border-radius:8px;padding:8px 10px 9px;
+  font:500 12.5px/1.45 var(--ui);color:#fff;text-shadow:0 1px 2px #000}
+#chat h2{margin:0 0 4px;font:600 10px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+#chat .msg{animation:in .35s ease}
+#chat .msg b{font-weight:600}
+@keyframes in{from{opacity:0;transform:translateY(4px)}}
+
+/* legend */
+#legend{position:fixed;right:12px;top:12px;width:262px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 12px 10px;backdrop-filter:blur(6px)}
+#legend h1{margin:0;font:34px/0.95 var(--display);letter-spacing:.04em;color:#ffe3f6;text-shadow:0 0 12px #ff2bd6,0 0 2px #ff2bd6}
+#legend p{margin:6px 0 10px;font:500 12px/1.4 var(--ui);color:var(--muted);text-wrap:pretty}
+.rows{display:grid;gap:4px}
+.row{display:grid;grid-template-columns:12px 1fr auto;align-items:center;gap:9px;width:100%;padding:6px 8px;border-radius:9px;border:1px solid transparent;
+  background:rgba(255,255,255,.04);color:var(--ink);font:500 12.5px/1.2 var(--ui);text-align:left;cursor:pointer}
+.row:hover{border-color:var(--line)}
+.row:focus-visible{outline:2px solid var(--c);outline-offset:1px}
+.row i{width:12px;height:12px;border-radius:4px;background:var(--c);box-shadow:0 0 8px var(--c)}
+.row small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.row .n{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+.row[aria-pressed="false"]{opacity:.45}
+.row[aria-pressed="false"] i{box-shadow:none}
+#legend .foot{margin:9px 2px 0;font-size:11px;color:var(--muted)}
+#hint{position:fixed;right:12px;bottom:12px;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.5);
+  font:500 12px/1.2 var(--ui);color:var(--muted);white-space:nowrap}
+
+
+/* jukebox: YouTube IFrame Player when served over http, link-out otherwise */
+#jukebox{position:fixed;left:12px;bottom:12px;width:min(548px,calc(100vw - 24px));box-sizing:border-box;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px 12px 12px;backdrop-filter:blur(6px);display:grid;grid-template-columns:200px minmax(0,1fr);gap:8px 12px}
+#jukebox.noplayer{width:min(300px,calc(100vw - 24px));grid-template-columns:minmax(0,1fr)}
+#jukebox .lbl{grid-column:1/-1}
+.jb-side{display:grid;gap:7px;align-content:start;min-width:0}
+#jukebox .lbl{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;font:600 10px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.eq{display:flex;align-items:flex-end;gap:2px;height:14px}
+.eq span{width:3px;height:100%;background:#ff2bd6;border-radius:1px;transform-origin:bottom;transform:scaleY(.2)}
+.eq.on span{animation:eq .48s ease-in-out infinite alternate}
+.eq span:nth-child(2){animation-delay:-.12s;background:#3ee8ff}.eq span:nth-child(3){animation-delay:-.3s;background:#ffc53d}.eq span:nth-child(4){animation-delay:-.2s;background:#b98cff}
+@keyframes eq{from{transform:scaleY(.25)}to{transform:scaleY(1)}}
+#yt-wrap{width:200px;height:200px;border-radius:10px;overflow:hidden;background:#000}
+#yt-wrap iframe,#yt-player{width:100%;height:100%;border:0;display:block}
+.np{display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center}
+.np.bare{grid-template-columns:1fr}
+.cover{width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,#ff2bd6,#7a2bff 60%,#3ee8ff);display:grid;place-items:center;font:20px/1 var(--display);color:#fff}
+.np.bare .cover{display:none}
+.np b{display:block;font:600 13.5px/1.25 var(--ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np small{display:block;font:500 11.5px/1.3 var(--ui);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np > div{min-width:0}
+.ctrls{display:flex;align-items:center;gap:6px}
+.ctrls button{width:32px;height:32px;display:grid;place-items:center;padding:0;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.07);color:var(--ink);cursor:pointer}
+.ctrls button svg{width:14px;height:14px;fill:currentColor}
+.ctrls .playbtn{width:38px;height:38px;background:#ff2bd6;border-color:#ff2bd6;color:#16051a}
+.ctrls button[aria-pressed="true"]{background:rgba(62,232,255,.18);border-color:var(--working);color:var(--working)}
+.ctrls input[type=range]{flex:1;min-width:0;accent-color:#ff2bd6}
+#jukebox button:focus-visible,#jukebox select:focus-visible,#jukebox input:focus-visible,#jukebox a:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.fld{font:600 10px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.selrow,#jb-form{display:flex;gap:6px}
+#jukebox select,#jukebox input[type=text]{flex:1;min-width:0;padding:7px 8px;border-radius:8px;border:1px solid var(--line);background:rgba(0,0,0,.4);color:var(--ink);font:500 12.5px var(--ui)}
+#jukebox select option{background:#16131f;color:var(--ink)}
+.txtbtn{padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:var(--ink);font:600 12px var(--ui);cursor:pointer}
+.txtbtn:disabled{opacity:.4;cursor:default}
+#jb-msg{margin:0;min-height:1.3em;font:500 11.5px/1.35 var(--ui);color:var(--muted)}
+#jb-msg.err{color:var(--waiting)}
+#jb-link{font:600 12px/1 var(--ui);color:#ff8fe8;text-decoration:none}
+#jb-link:hover{text-decoration:underline}
+
+/* jukebox mini mode: see-through bar with title, progress, buttons */
+.lbl-r{display:flex;align-items:center;gap:10px}
+.iconbtn,.mini-row button{width:28px;height:28px;display:grid;place-items:center;padding:0;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);cursor:pointer;flex:none}
+.iconbtn svg,.mini-row button svg{width:12px;height:12px;fill:currentColor}
+.iconbtn:focus-visible,.mini-row button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.mini-row .playbtn{background:#ff2bd6;border-color:#ff2bd6;color:#16051a}
+.prog-row{display:flex;align-items:center;gap:8px}
+.jb-prog{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.16);cursor:pointer}
+.jb-prog::before{content:'';position:absolute;inset:-7px 0}
+.jb-prog b{display:block;height:100%;width:0;border-radius:2px;background:#ff2bd6}
+.jb-time{font:500 10.5px/1 var(--ui);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.jb-mini{display:none}
+#jukebox.mini{width:min(380px,calc(100vw - 24px));grid-template-columns:minmax(0,1fr);gap:0;padding:8px 10px 9px;background:rgba(16,13,26,.42);border-color:rgba(255,255,255,.08);transition:background .2s}
+#jukebox.mini:hover,#jukebox.mini:focus-within{background:rgba(16,13,26,.88)}
+#jukebox.mini > .lbl,#jukebox.mini > .jb-side{display:none}
+#jukebox.mini #yt-wrap{position:fixed;left:-10000px;top:0}
+#jukebox.mini .jb-mini{display:grid;gap:7px}
+.mini-row{display:flex;align-items:center;gap:6px;min-width:0}
+.mini-row b{flex:1;min-width:0;font:600 13px/1.2 var(--ui);color:rgba(255,255,255,.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#jukebox.noplayer .mini-act,#jukebox.noplayer .prog-row{display:none}
+
+/* agent sources panel (top centre, collapsible) */
+#sources{position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(460px,calc(100vw - 24px));display:flex;flex-direction:column;align-items:center;z-index:5}
+.src-pill{display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(16,13,26,.72);color:var(--ink);font:600 12.5px/1 var(--ui);cursor:pointer;backdrop-filter:blur(6px)}
+.src-pill:hover{background:rgba(16,13,26,.92)}
+.src-pill:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.src-dots{display:flex;gap:3px}
+.src-dots i{width:7px;height:7px;border-radius:50%;background:#6b6580}
+.chev{width:12px;height:12px;fill:currentColor;transition:transform .2s}
+#sources.open .chev{transform:rotate(180deg)}
+#src-body{margin-top:8px;width:100%;box-sizing:border-box;max-height:calc(100vh - 80px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;backdrop-filter:blur(8px);display:grid;gap:10px}
+.src-server{display:flex;gap:8px;align-items:flex-start;margin:0;padding:8px 10px;border-radius:10px;background:rgba(255,197,61,.1);border:1px solid rgba(255,197,61,.35);font:500 12px/1.4 var(--ui);color:#ffe2a3}
+.src-server i{flex:none;width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--waiting)}
+.src-intro{margin:0;font:500 12px/1.45 var(--ui);color:var(--muted)}
+#sources code{font:500 11.5px ui-monospace,Consolas,monospace;color:var(--ink)}
+.src-card{border:1px solid var(--line);border-radius:12px;padding:10px 11px;display:grid;gap:7px;background:rgba(255,255,255,.03)}
+.src-card header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.src-card header b{font:600 14px/1.2 var(--ui)}
+.src-state{font:600 10px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.08);color:var(--muted);white-space:nowrap}
+.src-card p{margin:0;font:500 12px/1.4 var(--ui);color:var(--muted)}
+.src-card .feeds{color:var(--ink);font-size:11.5px}
+.src-fields{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.src-fields .wide{grid-column:1/-1}
+.src-card label{display:grid;gap:4px;min-width:0;font:600 10px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.src-card input{min-width:0;padding:7px 8px;border-radius:8px;border:1px solid var(--line);background:rgba(0,0,0,.35);color:var(--ink);font:500 12.5px var(--ui);letter-spacing:0;text-transform:none}
+.src-card input:disabled,.src-card button:disabled{opacity:.5;cursor:not-allowed}
+.src-card details summary{cursor:pointer;font:600 12px var(--ui);color:var(--ink)}
+.src-card pre{margin:6px 0;max-height:190px;overflow:auto;padding:8px;border-radius:8px;background:rgba(0,0,0,.45);font:11px/1.4 ui-monospace,Consolas,monospace;color:#d8d2ea}
+
+/* chat = progress log; rows open the agent's details */
+#chat .msg{display:block;width:100%;text-align:left;background:none;border:0;border-radius:4px;padding:1px 3px;margin:0 -3px;color:#fff;font:inherit;text-shadow:inherit;cursor:pointer}
+#chat .msg:hover{background:rgba(255,255,255,.08)}
+#chat .msg:focus-visible{outline:2px solid #fff;outline-offset:1px}
+#chat time{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+#chat .empty{margin:0;color:var(--muted);font-size:12px;line-height:1.4}
+.tag{pointer-events:auto;cursor:pointer}
+
+/* agent details card */
+#details{position:fixed;top:12px;right:12px;width:min(330px,calc(100vw - 24px));box-sizing:border-box;max-height:calc(100vh - 24px);overflow:auto;background:rgba(16,13,26,.96);border:1px solid var(--line);border-top:3px solid var(--c);border-radius:14px;padding:12px 14px;z-index:6;backdrop-filter:blur(8px)}
+#details header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#details header > div{min-width:0}
+#details h2{margin:5px 0 2px;font:600 17px/1.2 var(--ui);overflow-wrap:anywhere}
+#details header small{display:block;color:var(--muted);font:500 12px/1.3 var(--ui)}
+.dt-chip{display:inline-flex;align-items:center;gap:6px;font:600 10px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;color:var(--c)}
+.dt-chip i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+#details dl{display:grid;grid-template-columns:1fr 1fr;gap:11px 14px;margin:13px 0 0}
+#details dl div{min-width:0}
+#details dl .wide{grid-column:1/-1}
+#details dt{margin-bottom:4px;font:600 10px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+#details dd{margin:0;font:500 13px/1.4 var(--ui);color:var(--ink);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.dt-note{margin:12px 0 0;font:500 11px/1.4 var(--ui);color:var(--muted)}
+
+/* connect panel: live status per source */
+.src-state[data-status="ok"]{background:rgba(62,255,139,.14);color:#7dffb0}
+.src-state[data-status="error"]{background:rgba(255,45,45,.16);color:#ff8a8a}
+.src-state[data-status="waiting"]{background:rgba(255,197,61,.14);color:#ffd57a}
+.src-server.on{background:rgba(62,255,139,.08);border-color:rgba(62,255,139,.35);color:#c9ffe0}
+.src-server.on i{background:#3eff8b}
+.src-detail{margin:0;font:500 11.5px/1.4 var(--ui);color:var(--muted);min-height:1em}
+.src-detail.err{color:#ff9a9a}
+.src-actions{display:flex;gap:6px;flex-wrap:wrap}
+.src-dots i[data-status="ok"]{background:#3eff8b}
+.src-dots i[data-status="error"]{background:#ff2d2d}
+.src-dots i[data-status="waiting"]{background:#ffc53d}
+
+/* infra card (opened from the menu board behind the bar) */
+#infra-card{position:fixed;top:12px;right:12px;width:min(340px,calc(100vw - 24px));box-sizing:border-box;max-height:calc(100vh - 24px);overflow:auto;background:rgba(16,13,26,.96);border:1px solid var(--line);border-top:3px solid #ffa04a;border-radius:14px;padding:12px 14px;z-index:6;backdrop-filter:blur(8px)}
+#infra-card header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#infra-card h2{margin:0 0 2px;font:600 17px/1.2 var(--ui)}
+#infra-card header small{color:var(--muted);font:500 12px/1.3 var(--ui)}
+#infra-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:9px}
+#infra-list li{display:grid;grid-template-columns:10px 1fr auto;gap:4px 9px;align-items:baseline;font:500 13px/1.35 var(--ui)}
+#infra-list i{width:9px;height:9px;border-radius:50%;background:var(--dot,#7a7a8a);align-self:center}
+#infra-list > li[data-ok="true"] > i{background:#3eff8b}
+#infra-list > li[data-ok="false"] > i{background:#ff2d2d}
+#infra-list .st{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+#infra-list > li[data-ok="false"] > .st,#infra-list .drill li[data-ok="false"] .st{color:#ff8a8a}
+#infra-list small{grid-column:2/-1;color:var(--muted);font-size:11.5px}
+.drill-btn{grid-column:2/-1;justify-self:start;margin-top:3px;padding:3px 9px;border-radius:7px;border:1px solid var(--line);background:rgba(255,255,255,.07);color:var(--ink);font:600 11.5px var(--ui);cursor:pointer}
+.drill-btn:hover{background:rgba(255,255,255,.13)}.drill-btn:disabled{opacity:.5;cursor:default}
+.drill-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.drill{grid-column:1/-1;margin:4px 0 2px 19px;padding:8px 10px;border-left:2px solid var(--line);background:rgba(255,255,255,.03);border-radius:0 8px 8px 0;font:500 12px/1.4 var(--ui);color:var(--muted)}
+.drill ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.drill li{display:grid;grid-template-columns:8px 1fr auto;gap:2px 8px;align-items:baseline;font-size:12.5px;color:var(--ink)}
+.drill li i{width:8px;height:8px;border-radius:50%;background:var(--dot,#7a7a8a);align-self:center}
+.drill-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:11px}
+.drill-foot .drill-btn{margin:0}
+
+/* legend minimized: a colored circle and the state name per row */
+#legend{position:fixed}
+#legend-min{position:absolute;top:10px;right:10px}
+#legend.mini{width:auto;padding:8px 44px 8px 10px;background:rgba(16,13,26,.6)}
+#legend.mini h1,#legend.mini p,#legend.mini .foot,#legend.mini .row small{display:none}
+#legend.mini #legend-min{top:6px;right:6px}
+#legend.mini .rows{gap:1px}
+#legend.mini .row{grid-template-columns:10px auto auto;gap:7px;padding:3px 6px;background:none;font-size:12px}
+#legend.mini .row i{width:10px;height:10px;border-radius:50%}
+#legend.mini .row .n{font-size:11px}
+#legend.mini .row > span:first-of-type{min-width:172px}
+
+/* guest list: who gets into the club (left side, minimized to its name by default) */
+#guests{position:fixed;left:12px;top:120px;width:min(260px,calc(100vw - 24px));z-index:4;display:flex;flex-direction:column;align-items:flex-start}
+.guests-pill{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(16,13,26,.72);color:var(--ink);font:600 12.5px/1 var(--ui);cursor:pointer;backdrop-filter:blur(6px)}
+.guests-pill:hover{background:rgba(16,13,26,.92)}
+.guests-pill:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.guests-pill .n{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+.guests-pill svg{width:12px;height:12px;fill:currentColor;transition:transform .2s}
+#guests.open .guests-pill svg{transform:rotate(-90deg)}
+#guests-body{margin-top:8px;width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;backdrop-filter:blur(8px);display:grid;gap:8px}
+.guests-actions{display:flex;gap:6px}
+#guests-list{list-style:none;margin:0;padding:0 2px 0 0;display:grid;gap:2px;max-height:min(42vh,420px);overflow-y:auto;overscroll-behavior:contain}
+#guests-list label{display:grid;grid-template-columns:auto 10px 1fr;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;cursor:pointer;font:500 12.5px/1.25 var(--ui);color:var(--ink)}
+#guests-list label:hover{background:rgba(255,255,255,.06)}
+#guests-list input{margin:0;accent-color:#ff2bd6;width:15px;height:15px}
+#guests-list input:focus-visible{outline:2px solid #fff;outline-offset:2px}
+#guests-list i{width:10px;height:10px;border-radius:50%;background:var(--c)}
+#guests-list span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#guests-list small{display:block;color:var(--muted);font-size:11px}
+#guests-list li.off label{opacity:.5}
+#guests-list li.off i{background:#6b6580}
+#guests .empty{margin:0;font:500 12px/1.4 var(--ui);color:var(--muted)}
+.ov.gone{display:none}
+
+@media (max-width:700px){
+  #sources{left:12px;right:12px;width:auto;transform:none}
+  #guests{top:auto !important;bottom:200px}
+  #guests-list{max-height:30vh !important}
+  #details,#infra-card{top:auto;bottom:12px;left:12px;right:12px;width:auto;max-height:62vh}
+  #jukebox{top:56px;bottom:auto;width:auto;left:12px;right:12px;padding:9px 10px;gap:6px 10px;grid-template-columns:120px minmax(0,1fr)}
+  #yt-wrap{width:120px;height:120px}
+  #hint{display:none}
+  #jukebox .fld,#jb-form,#jb-link{display:none}
+
+  #chat{display:none}
+  #legend{left:12px;right:12px;width:auto;top:auto;bottom:46px;padding:10px}
+  #legend h1{font-size:26px}
+  #legend p,#legend .foot{display:none}
+  .rows{grid-template-columns:1fr 1fr;margin-top:8px}
+  .row small{display:none}
+  .bubble{max-width:138px;font-size:11px;padding:5px 9px 7px}
+  .tag{font-size:10.5px}
+  #hint{font-size:11px}
+}
+@media (prefers-reduced-motion: reduce){
+  .ov[data-state="down"] .tag,.ov[data-state="down"] .chip i{animation:none}
+  .eq span{animation:none}
+  .bubble,#chat .msg{transition:none;animation:none}
+  .zzz span{animation-duration:6s}
+}
+</style>
+
+<canvas id="gl" aria-label="3D nightclub where each character is an AI agent"></canvas>
+<div id="overlays"></div>
+
+<section id="guests" aria-label="Guest list">
+  <button type="button" id="guests-toggle" class="guests-pill" aria-expanded="false" aria-controls="guests-body">
+    <span>Guest list</span><span class="n" id="guests-count"></span>
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5z"/></svg>
+  </button>
+  <div id="guests-body" hidden>
+    <div class="guests-actions">
+      <button type="button" class="txtbtn" id="guests-all">Let everyone in</button>
+      <button type="button" class="txtbtn" id="guests-none">Empty the club</button>
+    </div>
+    <ul id="guests-list"></ul>
+  </div>
+</section>
+
+<section id="chat" aria-live="polite">
+  <h2>Club chat</h2>
+  <div id="chat-lines"></div>
+</section>
+
+<aside id="legend">
+  <button type="button" class="iconbtn" id="legend-min" aria-label="Minimize legend" aria-expanded="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 7h10v2H3z"/></svg></button>
+  <h1>Agent Club</h1>
+  <p>Every clubgoer is an AI agent. Where they hang out tells you what they're doing. Tap a row to hide those bubbles.</p>
+  <div class="rows" id="rows"></div>
+  <div class="foot">Demo data. Live sources: Claude Code hooks, LangGraph runs via Langfuse, n8n executions, OpenRouter.</div>
+</aside>
+
+<aside id="infra-card" aria-labelledby="infra-title" hidden>
+  <header>
+    <div><h2 id="infra-title">Bar menu · infra health</h2><small id="infra-sub">Checked every 30 seconds by the club server</small></div>
+    <button type="button" class="iconbtn" id="infra-close" aria-label="Close infra health"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.4 2 8 6.6 12.6 2 14 3.4 9.4 8l4.6 4.6-1.4 1.4L8 9.4 3.4 14 2 12.6 6.6 8 2 3.4z"/></svg></button>
+  </header>
+  <ul id="infra-list"></ul>
+</aside>
+<aside id="details" aria-labelledby="dt-name" hidden>
+  <header>
+    <div>
+      <span class="dt-chip"><i></i><span id="dt-state"></span></span>
+      <h2 id="dt-name"></h2>
+      <small id="dt-source"></small>
+    </div>
+    <button type="button" class="iconbtn" id="dt-close" aria-label="Close details"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.4 2 8 6.6 12.6 2 14 3.4 9.4 8l4.6 4.6-1.4 1.4L8 9.4 3.4 14 2 12.6 6.6 8 2 3.4z"/></svg></button>
+  </header>
+  <dl>
+    <div class="wide"><dt>Task it was given</dt><dd id="dt-task"></dd></div>
+    <div class="wide"><dt>Doing now</dt><dd id="dt-now"></dd></div>
+    <div><dt>Started</dt><dd id="dt-started"></dd></div>
+    <div><dt>Time taken</dt><dd id="dt-elapsed"></dd></div>
+    <div><dt>Tokens used</dt><dd id="dt-tokens"></dd></div>
+    <div><dt>Model</dt><dd id="dt-model"></dd></div>
+    <div class="wide"><dt>Usage left</dt><dd id="dt-usage"></dd></div>
+  </dl>
+  <p class="dt-note">Demo data. Live values come from the connected sources.</p>
+</aside>
+
+
+<section id="jukebox" aria-label="Club jukebox">
+  <div class="lbl"><span>Club jukebox</span><span class="lbl-r"><span class="eq" id="jb-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></span><button type="button" class="iconbtn" id="jb-min" aria-label="Minimize jukebox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 7h10v2H3z"/></svg></button></span></div>
+  <div id="yt-wrap" hidden><div id="yt-player"></div></div>
+  <div class="jb-side">
+  <div class="np" id="jb-np">
+    <div class="cover" aria-hidden="true">♪</div>
+    <div><b id="jb-title">Example playlist</b><small id="jb-sub">Press play to start</small></div>
+  </div>
+  <div class="prog-row" id="jb-prog-full" hidden><div class="jb-prog"><b></b></div><span class="jb-time">0:00 / 0:00</span></div>
+  <div class="ctrls" id="jb-ctrls" hidden>
+    <button type="button" id="jb-prev" aria-label="Previous track"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button>
+    <button type="button" id="jb-play" class="playbtn" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l10 6-10 6z"/></svg></button>
+    <button type="button" id="jb-next" aria-label="Next track"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2h2v12h-2zM2 2l8 6-8 6z"/></svg></button>
+    <button type="button" id="jb-shuffle" aria-pressed="false" aria-label="Shuffle"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2l3 2.5L11 7V5.5H9.6L4.8 12H1v-1.5h3.1L8.9 4H11zM1 4h3.8l1.6 2.2-.9 1.2L4.1 5.5H1zm8.6 6.5H11V9l3 2.5-3 2.5v-1.5H8.9l-1.6-2.2.9-1.2z"/></svg></button>
+    <input id="jb-vol" type="range" min="0" max="100" value="60" aria-label="Volume">
+  </div>
+  <label class="fld" for="jb-select">Playlist</label>
+  <div class="selrow">
+    <select id="jb-select"></select>
+    <button type="button" class="txtbtn" id="jb-remove">Remove</button>
+  </div>
+  <form id="jb-form">
+    <input id="jb-input" type="text" placeholder="Paste a playlist link or ID" aria-label="Playlist link or ID" autocomplete="off">
+    <button type="submit" class="txtbtn">Add</button>
+  </form>
+  <p id="jb-msg" role="status"></p>
+  <a id="jb-link" href="https://music.youtube.com/" target="_blank" rel="noopener noreferrer">Open this playlist in YouTube Music ↗</a>
+  </div>
+  <div class="jb-mini">
+    <div class="mini-row">
+      <span class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <b id="jb-mini-title">Example playlist</b>
+      <button type="button" class="mini-act" data-act="prev" aria-label="Previous track"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button>
+      <button type="button" class="mini-act playbtn" data-act="toggle" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <button type="button" class="mini-act" data-act="next" aria-label="Next track"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2h2v12h-2zM2 2l8 6-8 6z"/></svg></button>
+      <button type="button" id="jb-expand" aria-label="Expand jukebox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v2H4v3H2zm7 0h5v5h-2V4H9zM2 9h2v3h3v2H2zm10 0h2v5H9v-2h3z"/></svg></button>
+    </div>
+    <div class="prog-row"><div class="jb-prog"><b></b></div><span class="jb-time">0:00 / 0:00</span></div>
+  </div>
+</section>
+
+<section id="sources" aria-label="Agent sources">
+  <button type="button" id="src-toggle" class="src-pill" aria-expanded="false" aria-controls="src-body">
+    <span class="src-dots" id="src-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    <span id="src-summary">Demo data · Connect agents</span>
+    <svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6l5 5 5-5z"/></svg>
+  </button>
+  <div id="src-body" hidden>
+    <p class="src-server" id="src-server"><i></i><span>Looking for the club server…</span></p>
+    <p class="src-intro">Claude Code and Ollama need no key. n8n, Langfuse and OpenRouter do. Keys go to the club server on this computer and are saved in its <code>.env.local</code>. They’re never stored in this page or your browser, and the panel only ever shows their last four characters.</p>
+    <article class="src-card" data-src="claude">
+      <header><b>Claude Code</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Hooks in <code>~/.claude/settings.json</code> send every session event to the club server.</p>
+      <p class="feeds">Dance floor · bathroom line (permission prompts, long commands) · couch · bar (subagents, just finished) · sick (3 failed tools in a row) · passed out (silent mid-task)</p>
+      <details>
+        <summary>Hook config</summary>
+        <pre id="hook-json"></pre>
+        <button type="button" class="txtbtn" id="copy-hooks">Copy</button>
+      </details>
+      <p class="src-detail"></p>
+    </article>
+    <form class="src-card" data-src="n8n">
+      <header><b>n8n</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Reads executions through the n8n API every 5 seconds. Create a key in n8n under Settings → n8n API.</p>
+      <p class="feeds">Dance floor (running) · bathroom line (Wait node) · sick (failed) · bar (just finished) · couch (waiting for its trigger) · passed out (running 15+ min)</p>
+      <div class="src-fields">
+        <label>Instance URL<input id="src-n8n-url" name="url" type="url" placeholder="http://localhost:5678" autocomplete="off" spellcheck="false" disabled></label>
+        <label>API key<input id="src-n8n-key" name="key" type="password" placeholder="n8n API key" autocomplete="off" spellcheck="false" disabled></label>
+      </div>
+      <p class="src-detail"></p>
+      <div class="src-actions">
+        <button type="submit" class="txtbtn" disabled>Save and connect</button>
+        <button type="button" class="txtbtn" data-disconnect disabled>Disconnect</button>
+      </div>
+    </form>
+    <form class="src-card" data-src="langfuse">
+      <header><b>LangGraph (via Langfuse)</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Reads your LangGraph app’s runs from Langfuse traces every 10 seconds.</p>
+      <p class="feeds">Dance floor (run in progress) · bar (answered) · sick (errored step) · bathroom line (429) · passed out (no new steps for 5 min)</p>
+      <div class="src-fields">
+        <label class="wide">Host<input id="src-lf-host" name="host" type="url" placeholder="https://cloud.langfuse.com" autocomplete="off" spellcheck="false" disabled></label>
+        <label>Public key<input id="src-lf-pk" name="pk" type="password" placeholder="pk-lf-…" autocomplete="off" spellcheck="false" disabled></label>
+        <label>Secret key<input id="src-lf-sk" name="sk" type="password" placeholder="sk-lf-…" autocomplete="off" spellcheck="false" disabled></label>
+        <label class="wide">Name prefix<input id="src-lf-prefix" name="prefix" type="text" placeholder="langgraph" autocomplete="off" spellcheck="false" disabled></label>
+      </div>
+      <p class="src-detail"></p>
+      <div class="src-actions">
+        <button type="submit" class="txtbtn" disabled>Save and connect</button>
+        <button type="button" class="txtbtn" data-disconnect disabled>Disconnect</button>
+      </div>
+    </form>
+    <form class="src-card" data-src="openrouter">
+      <header><b>OpenRouter</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Reads your key’s credit every minute. It can’t see single requests, so 429s come from Langfuse.</p>
+      <p class="feeds">The bartender’s “usage left” · LangGraph runs’ “usage left”</p>
+      <div class="src-fields">
+        <label class="wide">API key<input id="src-or-key" name="key" type="password" placeholder="sk-or-…" autocomplete="off" spellcheck="false" disabled></label>
+      </div>
+      <p class="src-detail"></p>
+      <div class="src-actions">
+        <button type="submit" class="txtbtn" disabled>Save and connect</button>
+        <button type="button" class="txtbtn" data-disconnect disabled>Disconnect</button>
+      </div>
+    </form>
+    <form class="src-card" data-src="ollama">
+      <header><b>Ollama</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Checks which local models are loaded. No key.</p>
+      <p class="feeds">Couch (idle or not loaded) · dance floor (just used) · passed out (Ollama not running)</p>
+      <div class="src-fields">
+        <label>Ollama URL<input id="src-ol-url" name="url" type="url" placeholder="http://localhost:11434" autocomplete="off" spellcheck="false" disabled></label>
+        <label>Models (comma separated)<input id="src-ol-models" name="models" type="text" placeholder="qwen3.5:9b" autocomplete="off" spellcheck="false" disabled></label>
+      </div>
+      <p class="src-detail"></p>
+      <div class="src-actions">
+        <button type="submit" class="txtbtn" disabled>Save and connect</button>
+        <button type="button" class="txtbtn" data-disconnect disabled>Disconnect</button>
+      </div>
+    </form>
+    <form class="src-card" data-src="infra">
+      <header><b>Bar menu (infra health)</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Checks the site, API, prod DB and local containers every 30 seconds. The list lives in <code>infra.json</code>.</p>
+      <p class="feeds">The menu board behind the bar</p>
+      <div class="src-fields">
+        <label class="wide">Supabase URL<input id="src-inf-supabaseUrl" name="supabaseUrl" type="url" placeholder="https://….supabase.co" autocomplete="off" spellcheck="false" disabled></label>
+        <label class="wide">Supabase publishable (anon) key<input id="src-inf-supabaseKey" name="supabaseKey" type="password" placeholder="for the prod DB check" autocomplete="off" spellcheck="false" disabled></label>
+      </div>
+      <p class="src-detail"></p>
+      <div class="src-actions">
+        <button type="submit" class="txtbtn" disabled>Save and connect</button>
+        <button type="button" class="txtbtn" data-disconnect disabled>Disconnect</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<div id="hint">Drag to look around · scroll to zoom · tap someone for details</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+const PI = Math.PI, S = Math.sin, C = Math.cos;
+const BPS = 124 / 60;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const V3 = THREE.Vector3;
+
+const STATES = {
+  working: { label: 'Working', where: 'Dancing on the floor', color: '#3ee8ff' },
+  waiting: { label: 'Blocked', where: 'Bathroom line', color: '#ffc53d' },
+  idle:    { label: 'Idle', where: 'Couch, drink, shisha', color: '#b98cff' },
+  social:  { label: 'Waiting on agent / bragging', where: 'At the bar', color: '#ff5fa8' },
+  error:   { label: 'Error', where: 'Sick in the corner', color: '#8cff3c' },
+  down:    { label: 'Not responding', where: 'Passed out on the floor', color: '#ff2d2d' },
+  npc:     { label: 'Staff', where: '', color: '#ece8f4' },
+};
+const hiddenStates = {};
+
+/* ---------- renderer / camera ---------- */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07060c);
+scene.fog = new THREE.Fog(0x07060c, 36, 72);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
+const narrow = innerWidth / innerHeight < 0.9;
+camera.position.set(-4, narrow ? 32 : 21, narrow ? 42 : 27);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.target.set(-0.5, 0.5, -2.5);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.minDistance = 7; controls.maxDistance = 55;
+controls.minPolarAngle = 0.3; controls.maxPolarAngle = 1.38;
+controls.minAzimuthAngle = -1.0; controls.maxAzimuthAngle = 1.0;
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+/* ---------- helpers ---------- */
+const matCache = {};
+function lam(color, extra) {
+  const k = color + (extra ? JSON.stringify(extra) : '');
+  return matCache[k] || (matCache[k] = new THREE.MeshLambertMaterial(Object.assign({ color }, extra || {})));
+}
+function basic(color) { return new THREE.MeshBasicMaterial({ color }); }
+function box(w, h, d, m) { return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); }
+function cyl(rt, rb, h, m, seg) { return new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 20), m); }
+function canvasTex(w, h, draw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); draw(x, w, h);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; t._canvas = c; t._draw = draw; return t;
+}
+function redraw(t) { const c = t._canvas, x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height); t._draw(x, c.width, c.height); t.needsUpdate = true; }
+function add(m, x, y, z, parent) { m.position.set(x, y, z); (parent || scene).add(m); return m; }
+
+/* ---------- lights ---------- */
+scene.add(new THREE.HemisphereLight(0x9a8cff, 0x1a0f14, 0.55));
+scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+const key = new THREE.DirectionalLight(0xffe2f0, 0.38); key.position.set(-6, 14, 10); scene.add(key);
+const party = [0xff2bd6, 0x2be7ff, 0xffe02b].map(c => { const l = new THREE.PointLight(c, 0.9, 13, 1.6); scene.add(l); return l; });
+// neutral overhead wash so dancers keep their own colours against the floor
+const FLOOR_X = -1.2;   // dance floor centre (shifted left so the go-go pedestals flank the DJ booth)
+const wash = new THREE.SpotLight(0xffffff, 1.15, 22, 0.62, 0.55, 1.2); wash.position.set(FLOOR_X, 11, 0); wash.target.position.set(FLOOR_X, 0, -3.5); scene.add(wash, wash.target);
+add(new THREE.PointLight(0xffa04a, 1.4, 12, 1.5), 11, 4, -8.5);
+add(new THREE.PointLight(0xff3344, 1.2, 14, 1.5), 11, 4.5, 0);
+add(new THREE.PointLight(0xb8f0ff, 1.0, 11, 1.5), -13, 4, 2.5);
+
+/* ---------- room ---------- */
+const floorTex = canvasTex(256, 256, (x, w) => {
+  x.fillStyle = '#18171d'; x.fillRect(0, 0, w, w);
+  const s = w / 4;
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    x.fillStyle = (i + j) % 2 ? '#2b2a33' : '#24232b'; x.fillRect(i * s + 2, j * s + 2, s - 4, s - 4);
+  }
+});
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping; floorTex.repeat.set(8, 6.5);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(32, 26), new THREE.MeshLambertMaterial({ map: floorTex }));
+floor.rotation.x = -PI / 2; scene.add(floor);
+
+function wallTex(rep) {
+  const t = canvasTex(256, 256, (x, w, h) => {
+    for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#3a0a10' : '#52101a'; x.fillRect(i * 32, 0, 32, h); }
+    x.fillStyle = '#120709'; x.fillRect(0, h - 30, w, 30);
+    x.fillStyle = '#ff2bd6'; x.fillRect(0, h - 34, w, 4);
+  });
+  t.wrapS = THREE.RepeatWrapping; t.repeat.set(rep, 1); return t;
+}
+const backWall = add(new THREE.Mesh(new THREE.PlaneGeometry(32, 9), new THREE.MeshLambertMaterial({ map: wallTex(8) })), 0, 4.5, -13);
+const leftWall = add(new THREE.Mesh(new THREE.PlaneGeometry(26, 9), new THREE.MeshLambertMaterial({ map: wallTex(6.5) })), -16, 4.5, 0);
+leftWall.rotation.y = PI / 2;
+const rightWall = add(new THREE.Mesh(new THREE.PlaneGeometry(26, 9), new THREE.MeshLambertMaterial({ map: wallTex(6.5) })), 16, 4.5, 0);
+rightWall.rotation.y = -PI / 2;
+
+/* neon signs (redrawn once the display font is ready) */
+const signs = [];
+function neon(lines, color, w, h, px) {
+  const t = canvasTex(Math.round(w * 100), Math.round(h * 100), (x, cw, ch) => {
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    lines.forEach((ln, i) => {
+      const size = ln.size || px;
+      x.font = size + 'px Bangers, Impact, sans-serif';
+      x.shadowColor = ln.color || color; x.shadowBlur = 22;
+      x.fillStyle = ln.fill || '#fff3fb';
+      const y = ch * (lines.length === 1 ? 0.5 : (i + 0.5) / lines.length);
+      x.fillText(ln.text, cw / 2, y); x.fillText(ln.text, cw / 2, y);
+    });
+  });
+  signs.push(t);
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+}
+add(neon([{ text: 'AGENT CLUB', size: 190 }], '#ff2bd6', 11, 2.6), 0, 6.7, -12.95);
+add(neon([{ text: 'BAR', size: 104, color: '#ffa04a' }, { text: 'cache hits only', size: 44, color: '#ffa04a' }], '#ffa04a', 7, 1.75), 11.75, 8.0, -12.95);
+const chillSign = add(neon([{ text: 'CHILL ZONE', size: 120, color: '#b98cff' }], '#b98cff', 6, 1.5), 15.95, 5.4, -0.4);
+chillSign.rotation.y = -PI / 2;
+const wcSign = add(neon([{ text: 'WC', size: 120, color: '#7fe9ff' }, { text: '● OCCUPIED', size: 50, color: '#ff3b3b', fill: '#ffd0d0' }], '#7fe9ff', 2.6, 1.9), -15.93, 4.35, 5.5);
+wcSign.rotation.y = PI / 2;
+
+/* ---------- wall posters (blocky homages, drawn on canvas) ---------- */
+function rrect(x, X, Y, W, H, r) { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + W, Y, X + W, Y + H, r); x.arcTo(X + W, Y + H, X, Y + H, r); x.arcTo(X, Y + H, X, Y, r); x.arcTo(X, Y, X + W, Y, r); x.closePath(); }
+function blocky(x, cx, cy, o) {
+  const skin = o.skin || '#f5cd30';
+  x.fillStyle = o.shirt; rrect(x, cx - 82, cy + 24, 164, 150, 16); x.fill();                 // torso
+  x.fillRect(cx - 126, cy + 30, 42, 92); x.fillRect(cx + 84, cy + 30, 42, 92);              // sleeves
+  x.fillStyle = skin; x.fillRect(cx - 124, cy + 120, 38, 50); x.fillRect(cx + 86, cy + 120, 38, 50); // hands
+  if (o.body) o.body(x, cx, cy);
+  x.fillStyle = skin; rrect(x, cx - 64, cy - 110, 128, 124, 34); x.fill();                  // head
+  if (o.hair) { x.fillStyle = o.hair; rrect(x, cx - 68, cy - 124, 136, 48, 24); x.fill(); }
+  x.fillStyle = '#111'; x.strokeStyle = '#111'; x.lineCap = 'round';
+  if (o.shades) { rrect(x, cx - 50, cy - 66, 44, 26, 8); x.fill(); rrect(x, cx + 6, cy - 66, 44, 26, 8); x.fill(); x.fillRect(cx - 8, cy - 60, 16, 6); }
+  else { x.beginPath(); x.ellipse(cx - 24, cy - 52, 8, 12, 0, 0, 7); x.ellipse(cx + 24, cy - 52, 8, 12, 0, 0, 7); x.fill(); }
+  x.lineWidth = 7; x.beginPath(); x.arc(cx, cy - 32, 26, 0.2 * PI, 0.8 * PI); x.stroke();
+  if (o.head) o.head(x, cx, cy);
+}
+function posterTex(pp) {
+  const t = canvasTex(512, 720, (x, w, h) => {
+    const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, pp.bg[0]); g.addColorStop(1, pp.bg[1]);
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    x.fillStyle = 'rgba(255,255,255,.07)';
+    for (let yy = 10; yy < h; yy += 18) for (let xx = 10 + ((yy / 18) % 2) * 9; xx < w; xx += 18) { x.beginPath(); x.arc(xx, yy, 2.4, 0, 7); x.fill(); }
+    x.textAlign = 'center'; x.fillStyle = pp.accent; x.font = '600 25px Fredoka, Trebuchet MS, sans-serif';
+    x.fillText(pp.kicker, w / 2, 54);
+    pp.figure(x, w / 2, 250);
+    x.font = '74px Bangers, Impact, sans-serif'; x.fillStyle = '#fff'; x.shadowColor = pp.accent; x.shadowBlur = 20;
+    pp.name.forEach((ln, i) => x.fillText(ln, w / 2, 512 + i * 68));
+    x.shadowBlur = 0; x.font = '600 23px Fredoka, Trebuchet MS, sans-serif'; x.fillStyle = 'rgba(255,255,255,.88)';
+    pp.lines.forEach((ln, i) => x.fillText(ln, w / 2, 512 + pp.name.length * 68 - 10 + i * 30, w - 50));
+    x.strokeStyle = pp.accent; x.lineWidth = 10; x.strokeRect(5, 5, w - 10, h - 10);
+  });
+  signs.push(t);   // redrawn once the fonts have loaded
+  return t;
+}
+const POSTERS = [
+  { at: [15.95, 4.6, -7.6], rot: -PI / 2, accent: '#3ee8ff', bg: ['#16163a', '#3a0f4a'], kicker: 'LIVE TONIGHT · DJ SET',
+    name: ['DJ KARPATHY'], lines: ['vibe coding till sunrise', 'Software 2.0 · all night long'],
+    figure: (x, cx, cy) => blocky(x, cx, cy, { shirt: '#20203a', hair: '#2b1d14', shades: true,
+      head: (x, cx, cy) => { x.strokeStyle = '#111'; x.lineWidth = 12; x.beginPath(); x.arc(cx, cy - 56, 76, PI * 1.05, PI * 1.95); x.stroke();
+        x.fillStyle = '#ff2bd6'; rrect(x, cx - 90, cy - 72, 26, 50, 10); x.fill(); rrect(x, cx + 64, cy - 72, 26, 50, 10); x.fill(); },
+      body: (x, cx, cy) => { x.fillStyle = '#c9ccd6'; rrect(x, cx - 70, cy + 104, 140, 72, 8); x.fill();
+        x.fillStyle = '#3ee8ff'; x.font = '600 18px Fredoka, sans-serif'; x.textAlign = 'center'; x.fillText('vibes.py', cx, cy + 146); } }) },
+  { at: [-15.95, 4.6, -9.6], rot: PI / 2, accent: '#4aa3ff', bg: ['#0d2547', '#08111f'], kicker: 'RESIDENT · TYPE-LEVEL TECHNO',
+    name: ['MATT POCOCK'], lines: ['Dress code: strict', 'No “any” past the door'],
+    figure: (x, cx, cy) => blocky(x, cx, cy, { shirt: '#3178c6', hair: '#6b4a2b',
+      body: (x, cx, cy) => { x.fillStyle = '#fff'; x.font = '64px Bangers, Impact, sans-serif'; x.textAlign = 'center'; x.fillText('TS', cx, cy + 122); } }) },
+  { at: [-15.95, 4.6, -4.4], rot: PI / 2, accent: '#e8c48a', bg: ['#4a3622', '#1d140c'], kicker: 'THE ORIGINAL · EST. 1950',
+    name: ['ALAN TURING'], lines: ['“Can machines dance?”', 'Passed the vibe test first'],
+    figure: (x, cx, cy) => blocky(x, cx, cy, { shirt: '#6b5541', hair: '#2e2016',
+      body: (x, cx, cy) => { x.fillStyle = '#c81a22'; x.beginPath(); x.moveTo(cx, cy + 34); x.lineTo(cx - 26, cy + 20); x.lineTo(cx - 26, cy + 48); x.closePath();
+        x.moveTo(cx, cy + 34); x.lineTo(cx + 26, cy + 20); x.lineTo(cx + 26, cy + 48); x.closePath(); x.fill(); } }) },
+  { at: [15.95, 4.6, 6.8], rot: -PI / 2, accent: '#ff5fa8', bg: ['#4a0f3a', '#1a0626'], kicker: 'LONELY TONIGHT?',
+    name: ['HUGGING FACE'], lines: ['Call me if you need a', '“special” model ;)', '☎ 1-800-HUG-FACE'],
+    figure: (x, cx, cy) => {
+      // long hair behind, a dress, then an emoji-style hugging face with its two hands
+      x.fillStyle = '#7a3b1e'; rrect(x, cx - 92, cy - 120, 184, 230, 60); x.fill();
+      x.fillStyle = '#ff4fa0'; x.beginPath(); x.moveTo(cx - 70, cy + 30); x.lineTo(cx + 70, cy + 30); x.lineTo(cx + 104, cy + 178); x.lineTo(cx - 104, cy + 178); x.closePath(); x.fill();
+      x.fillStyle = '#ffd21e'; x.beginPath(); x.arc(cx, cy - 40, 78, 0, 7); x.fill();
+      x.fillStyle = '#111'; x.beginPath(); x.arc(cx - 26, cy - 58, 9, 0, 7); x.arc(cx + 26, cy - 58, 9, 0, 7); x.fill();
+      x.lineWidth = 4; x.strokeStyle = '#111';
+      [[-26, 1], [26, -1]].forEach(([dx, s]) => { for (let k = 0; k < 3; k++) { x.beginPath(); x.moveTo(cx + dx - 6 * s + k * 6 * s, cy - 68); x.lineTo(cx + dx - 10 * s + k * 9 * s, cy - 80); x.stroke(); } });
+      x.fillStyle = '#e0245e'; x.beginPath(); x.ellipse(cx, cy - 18, 30, 18, 0, 0, PI); x.fill();
+      x.fillStyle = 'rgba(255,90,140,.5)'; x.beginPath(); x.arc(cx - 50, cy - 30, 13, 0, 7); x.arc(cx + 50, cy - 30, 13, 0, 7); x.fill();
+      x.fillStyle = '#ffb21e'; x.beginPath(); x.ellipse(cx - 70, cy + 6, 26, 20, -0.5, 0, 7); x.ellipse(cx + 70, cy + 6, 26, 20, 0.5, 0, 7); x.fill();
+      x.fillStyle = '#111'; rrect(x, cx + 78, cy + 70, 34, 60, 7); x.fill(); x.fillStyle = '#3ee8ff'; x.fillRect(cx + 83, cy + 76, 24, 44);
+    } },
+];
+POSTERS.forEach(pp => {
+  const m = add(new THREE.Mesh(new THREE.PlaneGeometry(3.2, 4.5), new THREE.MeshBasicMaterial({ map: posterTex(pp), color: 0xdcdce6 })), ...pp.at);
+  m.rotation.y = pp.rot;
+});
+(document.fonts && document.fonts.load ? document.fonts.load('64px Bangers') : Promise.resolve()).then(() => signs.forEach(redraw)).catch(() => {});
+
+/* stage + DJ booth */
+add(box(11, 0.8, 4.2, lam('#1d1c26')), 0, 0.4, -10.9);
+add(box(11, 0.08, 0.08, basic('#ff2bd6')), 0, 0.82, -8.8);
+add(box(4, 1.2, 1, lam('#18171f')), 0, 1.4, -10.2);
+let eqT = 0;
+const eqTex = canvasTex(256, 64, (x, w, h) => {
+  x.fillStyle = '#0b0a12'; x.fillRect(0, 0, w, h);
+  for (let i = 0; i < 16; i++) {
+    const v = 0.25 + 0.75 * Math.abs(S(eqT * 3.1 + i * 0.9) * C(eqT * 1.7 + i * 0.35));
+    x.fillStyle = `hsl(${290 - i * 12},100%,60%)`; x.fillRect(6 + i * 15.5, h - v * (h - 8) - 4, 11, v * (h - 8));
+  }
+});
+add(new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshBasicMaterial({ map: eqTex })), 0, 1.4, -9.69);
+const platters = [-1, 1].map(x => add(cyl(0.48, 0.48, 0.07, lam('#2c2c36')), x, 2.04, -10.2));
+platters.forEach(p => add(box(0.5, 0.02, 0.06, basic('#ff2bd6')), 0, 0.05, 0, p));
+const woofers = [];
+[-4.4, 4.4].forEach(x => {
+  add(box(1.6, 3, 1.3, lam('#15141b')), x, 2.3, -11.3);
+  const w = cyl(0.55, 0.55, 0.1, lam('#2a2933')); w.rotation.x = PI / 2; add(w, x, 1.85, -10.62); woofers.push(w);
+  const tw = cyl(0.25, 0.25, 0.1, lam('#2a2933')); tw.rotation.x = PI / 2; add(tw, x, 3.1, -10.62);
+});
+
+/* dance floor */
+const TILE_COLS = ['#ff2bd6', '#2be7ff', '#ffe02b', '#7a2bff', '#2bff88'].map(c => new THREE.Color(c));
+const tiles = [];
+for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) {
+  const m = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  add(box(1.14, 0.06, 1.14, m), FLOOR_X - 3.6 + i * 1.2, 0.04, -6.6 + j * 1.2);
+  tiles.push({ i, j, m, base: TILE_COLS[(i + j * 2) % 5], col: new THREE.Color(), g: 0 });
+}
+const disco = add(new THREE.Mesh(new THREE.SphereGeometry(0.75, 18, 12), new THREE.MeshLambertMaterial({ color: 0xdedeea, emissive: 0x18181f, flatShading: true })), FLOOR_X, 7.6, -3);
+add(cyl(0.02, 0.02, 1.4, basic('#555')), FLOOR_X, 9, -3);
+
+/* concert truss + sweeping beams */
+add(box(8.6, 0.25, 0.25, lam('#1a1922')), FLOOR_X, 9.2, -3);
+add(box(0.25, 0.25, 7.5, lam('#1a1922')), FLOOR_X - 4.2, 9.2, -3);
+add(box(0.25, 0.25, 7.5, lam('#1a1922')), FLOOR_X + 4.2, 9.2, -3);
+const BEAM_H = 9.1;
+const beamGeo = new THREE.ConeGeometry(1.25, BEAM_H, 28, 1, true); beamGeo.translate(0, -BEAM_H / 2, 0);
+const poolTex = canvasTex(64, 64, (x) => {
+  const g = x.createRadialGradient(32, 32, 2, 32, 32, 31); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+});
+const beams = [[FLOOR_X - 3.8, -6.6], [FLOOR_X + 3.8, -6.6], [FLOOR_X - 3.8, 0.6], [FLOOR_X + 3.8, 0.6]].map(([x, z], i) => {
+  const head = add(new THREE.Group(), x, 9.05, z);
+  add(cyl(0.22, 0.28, 0.4, lam('#111')), 0, 0, 0, head);
+  const cone = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  head.add(cone);
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshBasicMaterial({ map: poolTex, color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+  pool.rotation.x = -PI / 2; scene.add(pool);
+  return { head, cone, pool, i };
+});
+
+/* go-go pedestals for the most expensive models */
+function pedestal(x, z, r, glow) {
+  add(cyl(r, r * 1.08, 1.1, lam('#17161e'), 36), x, 0.55, z);
+  add(cyl(r * 0.98, r * 0.98, 0.04, new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.55 }), 36), x, 1.12, z);
+  const ring = add(new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 8, 48), basic(glow)), x, 1.1, z); ring.rotation.x = PI / 2;
+  const base = add(new THREE.Mesh(new THREE.TorusGeometry(r * 1.08, 0.04, 8, 48), basic(glow)), x, 0.04, z); base.rotation.x = PI / 2;
+  const chrome = lam('#d9dde6', { emissive: '#3a3d48' });
+  add(cyl(0.06, 0.06, 3.4, chrome, 12), x, 1.1 + 1.7, z - r * 0.55);   // the pole
+  add(cyl(0.16, 0.16, 0.08, chrome, 16), x, 4.54, z - r * 0.55);
+  add(new THREE.PointLight(glow, 1.1, 6, 1.6), x, 4.2, z + 0.6);
+}
+pedestal(-6.9, -7.7, 1.0, 0xffd23f);   // Fable, left of the DJ booth
+pedestal(6.9, -7.5, 1.45, 0x3ee8ff);   // Astra + Sol, right of the DJ booth
+
+/* bar */
+add(box(8.6, 1.3, 1.1, lam('#4a2614')), 11.2, 0.65, -10.7);
+add(box(8.9, 0.12, 1.35, lam('#2c2b36')), 11.2, 1.36, -10.7);
+add(box(8.6, 0.06, 0.06, basic('#2be7ff')), 11.2, 0.15, -10.13);
+const COUNTER_Y = 1.42;
+function bottle(col, x, z) {
+  const m = lam(col, { emissive: col, emissiveIntensity: 0.3 });
+  add(cyl(0.12, 0.13, 0.55, m, 10), x, COUNTER_Y + 0.28, z);
+  add(cyl(0.045, 0.05, 0.22, m, 8), x, COUNTER_Y + 0.66, z);
+}
+const glassMat = new THREE.MeshLambertMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.32, depthWrite: false });
+// 'tall' = highball with straw, lime wheel and a paper umbrella; 'coupe' = stemmed glass with a cherry
+function cocktail(col, kind, umbrella) {
+  const g = new THREE.Group();
+  const drink = new THREE.MeshLambertMaterial({ color: col, emissive: col, emissiveIntensity: 0.45, transparent: true, opacity: 0.92 });
+  if (kind === 'coupe') {
+    add(cyl(0.09, 0.1, 0.02, glassMat, 14), 0, 0.01, 0, g);
+    add(cyl(0.018, 0.018, 0.2, glassMat, 6), 0, 0.12, 0, g);
+    const bowl = add(new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.15, 18, 1, true), glassMat), 0, 0.3, 0, g); bowl.rotation.x = PI;
+    const liquid = add(new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.12, 18), drink), 0, 0.31, 0, g); liquid.rotation.x = PI;
+    add(new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), lam('#e0102e', { emissive: '#600010' })), 0.07, 0.4, 0, g);
+  } else {
+    add(cyl(0.1, 0.09, 0.36, glassMat, 14), 0, 0.18, 0, g);
+    add(cyl(0.088, 0.08, 0.3, drink, 14), 0, 0.16, 0, g);
+    const straw = add(cyl(0.012, 0.012, 0.42, basic('#ff2bd6'), 6), 0.03, 0.4, 0, g); straw.rotation.z = -0.25;
+    const lime = add(cyl(0.06, 0.06, 0.012, lam('#9be15d', { emissive: '#2d4a10' }), 14), -0.09, 0.35, 0, g); lime.rotation.z = PI / 2;
+    if (umbrella) {
+      const stick = add(cyl(0.006, 0.006, 0.24, lam('#f2e6c8'), 4), 0.05, 0.45, -0.03, g); stick.rotation.z = 0.35;
+      add(new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.05, 10), lam(umbrella, { emissive: umbrella, emissiveIntensity: 0.25 })), 0.01, 0.57, -0.03, g);
+    }
+  }
+  g.scale.setScalar(1.25);
+  return g;
+}
+[['#3fbf6a', 7.15], ['#e0a33a', 7.45], ['#7fd3ff', 14.95], ['#9b59ff', 15.25]].forEach(([c, x]) => bottle(c, x, -10.55));
+[['#ff5fa8', 'tall', '#ffe02b', 8.2], ['#2be7ff', 'coupe', null, 9.3], ['#ffd23f', 'tall', '#ff2bd6', 10.3],
+ ['#ff8a3d', 'coupe', null, 12.4], ['#8cff3c', 'tall', '#2be7ff', 13.3], ['#b98cff', 'coupe', null, 14.2]]
+  .forEach(([c, k, u, x]) => add(cocktail(c, k, u), x, COUNTER_Y, -10.45));
+[13.6, 14.8].forEach(x => {
+  add(cyl(0.36, 0.36, 0.12, lam('#c81a22')), x, 1.0, -9.55);
+  add(cyl(0.06, 0.06, 1, lam('#888')), x, 0.5, -9.55);
+  add(cyl(0.32, 0.36, 0.05, lam('#666')), x, 0.03, -9.55);
+});
+
+/* bathroom door + queue stanchions */
+add(box(0.14, 3.4, 2.1, lam('#2a2a33')), -15.96, 1.7, 5.5);
+add(box(0.14, 3.15, 1.85, lam('#d6d2c4')), -15.9, 1.58, 5.5);
+add(new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), lam('#d4af37')), -15.8, 1.6, 4.85);
+
+/* the bin the sick agent keeps missing */
+add(cyl(0.38, 0.32, 0.9, lam('#3b3a44')), -7.7, 0.45, 3.3);
+add(cyl(0.41, 0.41, 0.06, lam('#55545f')), -7.7, 0.92, 3.3);
+const puddleMat = new THREE.MeshLambertMaterial({ color: 0x8cff3c, emissive: 0x2a5a10, transparent: true, opacity: 0.85, depthWrite: false });
+const puddles = new Map();
+const postX = -13.2, posts = [5, 2, -1];
+posts.forEach(z => {
+  add(cyl(0.07, 0.07, 1.1, lam('#d4af37')), postX, 0.55, z);
+  add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), lam('#d4af37')), postX, 1.12, z);
+  add(cyl(0.25, 0.28, 0.05, lam('#d4af37')), postX, 0.03, z);
+});
+for (let k = 0; k < posts.length - 1; k++) {
+  const a = posts[k], b = posts[k + 1];
+  const curve = new THREE.CatmullRomCurve3([new V3(postX, 1.05, a), new V3(postX, 0.75, (a + b) / 2), new V3(postX, 1.05, b)]);
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.04, 6), lam('#b3121a')));
+}
+
+/* lounge: curved red couches around round tables */
+function arcShape(rIn, rOut, a0, a1) {
+  const s = new THREE.Shape();
+  s.absarc(0, 0, rOut, a0, a1, false);
+  s.absarc(0, 0, rIn, a1, a0, true);
+  return s;
+}
+function extrudeUp(shape, depth) {
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 28 });
+  g.rotateX(-PI / 2); return g;
+}
+const COUCHES = [[10.6, 3.4], [11.2, -4.0]];
+const seatPos = (ci, a, r) => { const [cx, cz] = COUCHES[ci]; return [cx + r * C(a), cz - r * S(a)]; };
+COUCHES.forEach(([cx, cz], ci) => {
+  const a0 = PI + 0.95, a1 = PI + 2 * PI - 0.95;
+  add(new THREE.Mesh(extrudeUp(arcShape(1.25, 2.2, a0, a1), 0.6), lam('#c81a22')), cx, 0, cz);
+  add(new THREE.Mesh(extrudeUp(arcShape(2.2, 2.65, a0, a1), 1.75), lam('#9e1219')), cx, 0, cz);
+  add(cyl(0.85, 0.85, 0.08, lam('#3a3946'), 28), cx, 1.25, cz);
+  add(cyl(0.1, 0.1, 1.25, lam('#24232c')), cx, 0.62, cz);
+  add(cyl(0.45, 0.5, 0.06, lam('#24232c')), cx, 0.03, cz);
+  if (ci === 1) {
+    add(cocktail('#2be7ff', 'coupe'), cx - 0.45, 1.29, cz + 0.05);
+    add(glass('#ff5fa8'), cx + 0.35, 1.29, cz + 0.3);
+    add(glass('#ffe02b'), cx - 0.3, 1.29, cz - 0.35);
+    add(glass('#2be7ff'), cx + 0.1, 1.29, cz - 0.5);
+  }
+});
+function glass(col) {
+  const g = new THREE.Group();
+  const cup = cyl(0.11, 0.08, 0.3, new THREE.MeshLambertMaterial({ color: col, emissive: col, emissiveIntensity: 0.4, transparent: true, opacity: 0.88 }), 10);
+  cup.position.y = 0.15; g.add(cup);
+  const straw = cyl(0.015, 0.015, 0.3, basic('#ffffff'), 5); straw.position.set(0.04, 0.33, 0); straw.rotation.z = -0.25; g.add(straw);
+  return g;
+}
+
+/* hookah on couch 0's table */
+const HOOKAH = new THREE.Group();
+{
+  const pts = [[0, 0], [0.34, 0.04], [0.45, 0.28], [0.4, 0.55], [0.16, 0.76], [0.09, 0.9]].map(p => new THREE.Vector2(p[0], p[1]));
+  HOOKAH.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 20), new THREE.MeshLambertMaterial({ color: 0x2bd9c0, emissive: 0x0d4a44, transparent: true, opacity: 0.85 })));
+  const stem = cyl(0.05, 0.05, 1.0, lam('#c9a43a')); stem.position.y = 1.4; HOOKAH.add(stem);
+  const tray = cyl(0.28, 0.28, 0.03, lam('#c9a43a')); tray.position.y = 1.6; HOOKAH.add(tray);
+  const bowl = cyl(0.15, 0.1, 0.2, lam('#7b3b22')); bowl.position.y = 1.98; HOOKAH.add(bowl);
+  const coal = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff5a1f })); coal.position.y = 2.1; HOOKAH.add(coal);
+  HOOKAH.userData.coal = coal;
+  HOOKAH.scale.setScalar(0.62);
+  HOOKAH.position.set(COUCHES[0][0] - 0.15, 1.29, COUCHES[0][1] + 0.1);
+  scene.add(HOOKAH);
+  add(cocktail('#ff5fa8', 'tall', '#ffe02b'), COUCHES[0][0] + 0.45, 1.29, COUCHES[0][1] - 0.35);
+  add(cocktail('#ffd23f', 'coupe'), COUCHES[0][0] - 0.2, 1.29, COUCHES[0][1] - 0.55);
+}
+
+/* ---------- avatars (classic blocky style; units ×0.5 = world) ---------- */
+function faceTex(kind) {
+  return canvasTex(128, 128, (x) => {
+    x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = x.fillStyle = '#111'; x.lineWidth = 6;
+    const eyes = () => {
+      x.fillStyle = '#111'; x.beginPath(); x.ellipse(46, 52, 7, 11, 0, 0, 7); x.ellipse(82, 52, 7, 11, 0, 0, 7); x.fill();
+      x.fillStyle = '#fff'; x.beginPath(); x.arc(48, 47, 2.6, 0, 7); x.arc(84, 47, 2.6, 0, 7); x.fill(); x.fillStyle = '#111';
+    };
+    const smile = () => { x.beginPath(); x.arc(64, 70, 22, 0.18 * PI, 0.82 * PI); x.stroke(); };
+    switch (kind) {
+      case 'grin': eyes(); x.beginPath(); x.moveTo(42, 76); x.quadraticCurveTo(64, 108, 86, 76); x.closePath(); x.fill();
+        x.fillStyle = '#fff'; x.fillRect(50, 77, 28, 6); break;
+      case 'sleep': x.beginPath(); x.arc(46, 50, 9, 0.1 * PI, 0.9 * PI); x.stroke(); x.beginPath(); x.arc(82, 50, 9, 0.1 * PI, 0.9 * PI); x.stroke();
+        x.beginPath(); x.ellipse(66, 84, 6, 8, 0, 0, 7); x.stroke(); break;
+      case 'worried': eyes(); x.lineWidth = 5;
+        x.beginPath(); x.moveTo(34, 36); x.lineTo(54, 28); x.moveTo(74, 28); x.lineTo(94, 36); x.stroke();
+        x.beginPath(); x.moveTo(44, 84); x.lineTo(52, 79); x.lineTo(60, 84); x.lineTo(68, 79); x.lineTo(76, 84); x.lineTo(84, 79); x.stroke();
+        x.fillStyle = '#7fd3ff'; x.beginPath(); x.ellipse(98, 40, 5, 8, 0, 0, 7); x.fill(); break;
+      case 'cool': x.fillRect(28, 42, 32, 18); x.fillRect(68, 42, 32, 18); x.fillRect(56, 46, 16, 5);
+        x.fillStyle = '#5a5a70'; x.fillRect(32, 45, 10, 4); x.fillRect(72, 45, 10, 4); x.fillStyle = '#111';
+        x.beginPath(); x.moveTo(50, 80); x.quadraticCurveTo(70, 90, 84, 72); x.stroke(); break;
+      case 'chill': x.beginPath(); x.moveTo(36, 52); x.lineTo(56, 52); x.moveTo(72, 52); x.lineTo(92, 52); x.stroke();
+        x.beginPath(); x.arc(46, 56, 5, 0, PI); x.arc(82, 56, 5, 0, PI); x.fill(); smile(); break;
+      case 'girl': eyes(); x.lineWidth = 3;
+        x.beginPath(); x.moveTo(38, 44); x.lineTo(32, 38); x.moveTo(41, 41); x.lineTo(38, 34); x.moveTo(90, 44); x.lineTo(96, 38); x.moveTo(87, 41); x.lineTo(90, 34); x.stroke();
+        x.fillStyle = 'rgba(255,90,140,.45)'; x.beginPath(); x.arc(32, 70, 9, 0, 7); x.arc(96, 70, 9, 0, 7); x.fill();
+        x.fillStyle = '#e0457b'; x.beginPath(); x.ellipse(64, 80, 11, 6, 0, 0, PI); x.fill(); break;
+      case 'dead': x.lineWidth = 6;
+        [[46, 50], [82, 50]].forEach(([cx, cy]) => { x.beginPath(); x.moveTo(cx - 8, cy - 8); x.lineTo(cx + 8, cy + 8); x.moveTo(cx + 8, cy - 8); x.lineTo(cx - 8, cy + 8); x.stroke(); });
+        x.beginPath(); x.moveTo(48, 82); x.lineTo(80, 82); x.stroke();
+        x.fillStyle = '#ff6b8a'; x.beginPath(); x.ellipse(70, 84, 6, 8, 0, 0, PI); x.fill(); break;
+      case 'sick': x.lineWidth = 5;
+        x.beginPath(); x.moveTo(38, 44); x.lineTo(52, 51); x.lineTo(38, 58); x.moveTo(90, 44); x.lineTo(76, 51); x.lineTo(90, 58); x.stroke();
+        x.fillStyle = 'rgba(110,200,40,.6)'; x.beginPath(); x.arc(30, 70, 10, 0, 7); x.arc(98, 70, 10, 0, 7); x.fill();
+        x.fillStyle = '#111'; x.beginPath(); x.ellipse(64, 84, 12, 10, 0, 0, 7); x.fill();
+        x.fillStyle = '#8cff3c'; x.beginPath(); x.ellipse(64, 89, 9, 5, 0, 0, 7); x.fill(); break;
+      default: eyes(); smile();
+    }
+  });
+}
+const FACES = {};
+const faceMat = k => FACES[k] || (FACES[k] = new THREE.MeshLambertMaterial({ map: faceTex(k), transparent: true, depthWrite: false }));
+const shadowTex = canvasTex(64, 64, (x) => {
+  const g = x.createRadialGradient(32, 32, 2, 32, 32, 31); g.addColorStop(0, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+});
+const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false });
+
+function addHat(head, kind, color) {
+  const m = lam(color || '#222');
+  if (kind === 'cap') {
+    add(cyl(0.66, 0.66, 0.32, m), 0, 1.3, 0, head); add(box(0.9, 0.07, 0.62, m), 0, 1.17, 0.76, head);
+  } else if (kind === 'beanie') {
+    add(new THREE.Mesh(new THREE.SphereGeometry(0.68, 18, 10, 0, PI * 2, 0, PI / 2), m), 0, 1.1, 0, head);
+    add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), lam('#ffffff')), 0, 1.84, 0, head);
+  } else if (kind === 'tophat') {
+    add(cyl(0.92, 0.92, 0.07, m), 0, 1.24, 0, head); add(cyl(0.52, 0.55, 0.95, m), 0, 1.72, 0, head);
+    add(cyl(0.56, 0.56, 0.15, lam('#c81a22')), 0, 1.36, 0, head);
+  } else if (kind === 'spiky') {
+    for (let i = 0; i < 7; i++) {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.7, 6), m), a = i / 7 * PI * 2;
+      c.position.set(C(a) * 0.38, 1.45, S(a) * 0.38); c.rotation.set(S(a) * 0.5, 0, -C(a) * 0.5); head.add(c);
+    }
+    add(new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.85, 6), m), 0, 1.6, 0, head);
+  } else if (kind === 'headphones') {
+    add(new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.07, 8, 24, PI), m), 0, 0.62, 0, head);
+    [-0.7, 0.7].forEach(xx => { const c = cyl(0.26, 0.26, 0.2, lam('#ff2bd6')); c.rotation.z = PI / 2; add(c, xx, 0.62, 0, head); });
+  } else if (kind === 'hair') {
+    add(box(1.38, 0.45, 1.38, m), 0, 1.3, 0, head);
+    add(box(1.38, 2.0, 0.42, m), 0, 0.3, -0.52, head);
+    add(box(1.38, 0.28, 0.3, m), 0, 1.06, 0.55, head);
+  } else if (kind === 'crown') {
+    const gold = lam('#ffd23f', { emissive: '#5a4300' });
+    add(cyl(0.6, 0.6, 0.28, gold), 0, 1.33, 0, head);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * PI * 2; add(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.36, 4), gold), C(a) * 0.5, 1.62, S(a) * 0.5, head); }
+  }
+}
+
+const pickables = [];
+function makeAvatar(o) {
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const skin = lam(o.skin || '#f5cd30'), shirt = lam(o.shirt || '#888'), pants = lam(o.pants || '#2a2a3a');
+  add(box(2, 2, 1, shirt), 0, 3, 0, body);
+  const leg = xx => { const g = new THREE.Group(); g.position.set(xx, 2, 0); add(box(0.98, 2, 0.98, pants), 0, -1, 0, g); body.add(g); return g; };
+  const arm = xx => {
+    const g = new THREE.Group(); g.position.set(xx, 3.9, 0);
+    add(box(1, 0.9, 1, shirt), 0, -0.35, 0, g); add(box(0.96, 1.2, 0.96, skin), 0, -1.4, 0, g);
+    body.add(g); return g;
+  };
+  const hipL = leg(-0.5), hipR = leg(0.5), shL = arm(-1.5), shR = arm(1.5);
+  const head = new THREE.Group(); head.position.y = 4; body.add(head);
+  add(cyl(0.62, 0.62, 1.2, skin), 0, 0.62, 0, head);
+  const face = add(new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), faceMat(o.face || 'smile')), 0, 0.6, 0.63, head);
+  if (o.hat) addHat(head, o.hat, o.hatColor);
+  if (o.hold === 'drink' || o.holdL === 'drink') {
+    const g = glass(o.drink || '#ff5fa8'); g.scale.setScalar(2); add(g, 0, -2.25, 0.62, o.holdL ? shL : shR);
+  }
+  if (o.hold === 'phone') {
+    const p = box(0.55, 0.9, 0.1, lam('#111')); add(p, 0, -2.05, 0.62, shR);
+    add(new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.78), basic('#7fe9ff')), 0, 0, 0.06, p);
+    p.rotation.x = -1.2;
+  }
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), shadowMat); sh.rotation.x = -PI / 2; sh.position.y = 0.06; root.add(sh);
+  root.scale.setScalar(0.5);
+  return { root, sh, face, j: { body, hipL, hipR, shL, shR, head } };
+}
+
+/* ---------- the cast ---------- */
+const CAST = [
+  // dance floor = working
+  { id: 'claude · my-app', state: 'working', anim: 'point', at: [-2.3, -1.4], look: { shirt: '#2f6bff', pants: '#1b2140', hat: 'cap', hatColor: '#ff3b3b', face: 'grin' },
+    lines: [['Refactoring auth/session.py', 'Edit ×12 · 40 imports'], ['Renaming userId → user_id', '23 files, no regrets'], ['Fixing the test it just broke', 'tests/test_auth.py']] },
+  { id: 'claude · test-runner', state: 'working', anim: 'robot', at: [1.9, -1.0], look: { shirt: '#20c070', pants: '#222', hat: 'headphones', hatColor: '#222' },
+    lines: [['Running pytest', '186 passed · 2 skipped'], ['Writing tests for scope_gate', '14 cases, 3 cursed'], ['Mocking the database', 'for the 9th time today']] },
+  { id: 'advisor · langgraph run', state: 'working', anim: 'jump', at: [-0.1, -3.9], look: { shirt: '#ff8a1f', pants: '#3a2a1a', hat: 'beanie', hatColor: '#6b3cff', face: 'grin' },
+    lines: [['Retrieving RAG context', 'pgvector · top_k = 8'], ['Calculating ROI', '€1,840/mo saved for a bakery'], ['Drafting advice', 'scope gate: passed']] },
+  { id: 'n8n · lead-sync', state: 'working', anim: 'spin', at: [2.8, -5.3], look: { shirt: '#e8e8f0', pants: '#2b4bd6', hat: 'tophat', hatColor: '#151515', face: 'cool' },
+    lines: [['Syncing leads to Twenty', 'node 4 of 7 · HTTP Request'], ['Enriching 18 contacts', 'batch 2 of 3'], ['Posting the daily brief', 'node 6 of 7']] },
+  { id: 'claude · web', state: 'working', anim: 'floss', at: [-2.9, -5.8], look: { shirt: '#a3ff2b', pants: '#552288', skin: '#86d65a', hat: 'spiky', hatColor: '#ff2bd6', face: 'grin' },
+    lines: [['Centering a div', 'attempt #4'], ['Making the button 2px rounder', 'design said so'], ['Fixing dark mode', 'contrast 2.9 → 4.6']] },
+
+  // bathroom line = blocked / waiting on something
+  { id: 'claude · deploy', state: 'waiting', anim: 'potty', at: [-14.3, 4.1], since: 252, chip: 'Waiting on you', look: { shirt: '#ff4d4d', pants: '#333', face: 'worried', hat: 'cap', hatColor: '#222' },
+    lines: [['Needs your permission', 'Bash: docker compose up -d'], ['Still needs your OK', 'please. it’s urgent.']] },
+  { id: 'claude · npm install', state: 'waiting', anim: 'tap', at: [-14.3, 2.6], since: 254, chip: 'Waiting on Bash', look: { shirt: '#cb3837', pants: '#1d1d1d', face: 'worried' },
+    lines: [['npm install', 'resolving peer deps…'], ['npm install', '847 packages, 3 of them left-pad']] },
+  { id: 'openrouter · 429', state: 'waiting', anim: 'phone', at: [-14.3, 1.1], since: 31, chip: 'Waiting on API', look: { shirt: '#5b5bff', pants: '#2a2a3a', hat: 'beanie', hatColor: '#ffc53d', hold: 'phone' },
+    lines: [['429 from OpenRouter', 'gpt-4o-mini · retry in 30 s'], ['Rate limited again', 'doomscrolling the status page']] },
+  { id: 'n8n · follow-up', state: 'waiting', anim: 'watch', at: [-14.3, -0.4], since: 488, chip: 'Wait node', look: { shirt: '#24292f', pants: '#6e7681', face: 'worried' },
+    lines: [['Paused in a Wait node', 'resumes in 2 h to send the follow-up'], ['Still in the Wait node', 'checks watch. again.']] },
+
+  // lounge = idle
+  { id: 'claude · docs', state: 'idle', anim: 'sleep', seat: [0, 0.15], since: 540, look: { shirt: '#6b3cff', pants: '#2a2a3a', face: 'sleep', hold: 'drink', drink: '#2be7ff' },
+    lines: ['do fish ever get thirsty?', 'if I’m a LARGE language model… who’s the small one?', 'what if semicolons have feelings;', 'tabs… no, spaces… zzz', 'is a hotdog a sandwich? asking for a benchmark'] },
+  { id: 'n8n · weekly-report', state: 'idle', anim: 'shisha', seat: [0, 1.25], since: 590, look: { shirt: '#1f9e8a', pants: '#222', face: 'chill', hat: 'beanie', hatColor: '#c81a22' },
+    lines: ['maybe the real tokens were the friends we made', 'what color is my context window', 'not scheduled till Monday. bliss.', 'if I get 10x faster do I just wait 10x longer?'] },
+  { id: 'claude · scratch', state: 'idle', anim: 'slouch', seat: [1, 0.95], since: 1320, look: { shirt: '#f2f2f2', pants: '#3b3b5a', face: 'chill', hat: 'cap', hatColor: '#3ee8ff' },
+    lines: ['I could lint something. I won’t.', 'counting ceiling tiles. there is no ceiling.', 'should I learn Rust? …no', 'warning: unused variable `me`'] },
+
+  // bar = waiting on another agent / bragging after a win
+  { id: 'claude · auth-fix', state: 'social', anim: 'brag', at: [11.1, -8.8], faceTo: [9.6, -7.6], bubble: 'say', chip: 'Done · bragging',
+    look: { shirt: '#111', pants: '#c81a22', hat: 'crown', face: 'cool', holdL: 'drink', drink: '#ffe02b' },
+    lines: ['Just merged PR #29. Zero failing tests. Zero.', 'Refactored 40 files in one go. No big deal.', 'My context window? A million tokens. Yeah.', 'I don’t hallucinate. I improvise.'] },
+  { id: 'claude · main', state: 'social', anim: 'lean', at: [7.3, -9.15], faceTo: [0, -2], chip: 'Waiting on subagent',
+    look: { shirt: '#ff5fa8', pants: '#1d1d2b', face: 'smile', hat: 'tophat', hatColor: '#6b3cff' },
+    lines: ['waiting for @test-runner to finish…', 'can’t merge until CI is green. so I watch.', 'nice moves, @my-app', 'handoff ETA: two songs'] },
+
+  // by the bin = error
+  { id: 'n8n · invoice-ocr', state: 'error', anim: 'sick', at: [-8.6, 2.4], faceTo: [-8.6, 6], since: 95, chip: 'Execution failed',
+    look: { shirt: '#ff8a1f', pants: '#2a2a3a', skin: '#c9e86a', face: 'sick' },
+    lines: [['HTTP 500 from the OCR API', 'node 3 of 6 · retry 3 of 5'], ['Can’t parse the invoice JSON', 'Unexpected token < at position 0'], ['Failed again', 'someone check the credentials pls']] },
+  // face-down on the floor = not responding
+  { id: 'advisor · run 8f2c', state: 'down', anim: 'down', at: [3.6, 4.4], y: 0.26, yaw: 2.3, since: 372, chip: 'Not responding',
+    look: { shirt: '#ff8a1f', pants: '#3a2a1a', hat: 'beanie', hatColor: '#6b3cff', face: 'dead' },
+    lines: [['No heartbeat', 'last step: retrieve_context'], ['Stuck mid-run', 'no new steps in Langfuse for 6 min'], ['Probably timed out', 'restart the run to revive it']] },
+
+  // go-go dancers: the priciest models, on pedestals
+  { id: 'Fable', state: 'npc', anim: 'gogo', at: [-6.9, -7.5], y: 1.1, faceTo: [-2, 8], bubble: 'say', chip: 'Go-go · top shelf',
+    look: { shirt: '#ffd23f', pants: '#1a1308', hat: 'crown', face: 'cool' },
+    lines: ['I don’t do context windows under a million', 'premium tokens only, darling', 'tips accepted in GPUs', 'yes, I’m worth it'] },
+  { id: 'Astra', state: 'npc', anim: 'gogo', at: [6.1, -7.3], y: 1.1, faceTo: [1, 8], bubble: 'say', chip: 'Go-go twin',
+    look: { shirt: '#c9d2ff', pants: '#2a2f6b', hat: 'hair', hatColor: '#e8e8f0', face: 'girl' },
+    lines: ['we finish each other’s…', 'twice the reasoning', 'two of us, one invoice'] },
+  { id: 'Sol', state: 'npc', anim: 'gogo', mirror: true, at: [7.7, -7.3], y: 1.1, faceTo: [11, 8], bubble: 'say', chip: 'Go-go twin',
+    look: { shirt: '#c9d2ff', pants: '#2a2f6b', hat: 'hair', hatColor: '#e8e8f0', face: 'girl' },
+    lines: ['…sentences', 'twice the price', 'no prompt can tell us apart'] },
+  // staff (not agents)
+  { id: '~vibes~', state: 'npc', anim: 'lady', at: [9.7, -8.8], faceTo: [11.1, -7.6], bubble: 'say', chip: 'Unimpressed',
+    look: { shirt: '#ff4fa0', pants: '#2a1a3a', hat: 'hair', hatColor: '#6b3a1e', face: 'girl', holdL: 'drink', drink: '#ff2bd6' },
+    lines: ['…cool.', 'is that a lot?', 'my ex was a regex', 'I’m gonna get another drink'] },
+  { id: 'DJ Orchestrator', state: 'npc', anim: 'dj', at: [0, -11.25], y: 0.8, faceTo: [0, 0], chip: 'Orchestrator',
+    look: { shirt: '#111', pants: '#111', hat: 'headphones', hatColor: '#eee', face: 'cool' },
+    lines: ['queue: 3 tasks · 4 agents blocked', 'next task drops in 3… 2…', '5 dancing · 4 blocked · 1 sick · 1 down'] },
+  { id: 'OpenRouter', state: 'npc', anim: 'bartend', at: [11.8, -11.9], faceTo: [11.8, 0], bubble: 'say', chip: 'Bartender · serves models',
+    look: { shirt: '#f2f2f2', pants: '#111', face: 'smile', holdL: 'drink', drink: '#ffa04a' },
+    lines: ['gpt-4o-mini, coming right up', 'that’s 1,204 tokens. $0.0004.', 'embeddings? on the house'] },
+];
+
+
+/* demo details per agent; the live version fills these from hooks, Langfuse, n8n and OpenRouter */
+const INFO = {
+  'claude · my-app': { src: 'Claude Code session', model: 'Opus 5.5', ago: 214, tok: [48200, 6100], usage: 'Context window: 61% left', task: 'Move auth/session.py onto the new token helper and keep the tests green' },
+  'claude · test-runner': { src: 'Claude Code subagent (of claude · main)', model: 'Sonnet 5.5', ago: 95, tok: [12400, 1800], usage: 'Context window: 88% left', task: 'Run the backend unit tests and report any failures' },
+  'advisor · langgraph run': { src: 'LangGraph run (Langfuse)', model: 'gpt-4o-mini via OpenRouter', ago: 12, tok: [6900, 820], usage: 'OpenRouter credit: $41.20 left', task: 'Customer asked: “Can you automate my bakery’s weekly supplier orders?”' },
+  'n8n · lead-sync': { src: 'n8n execution #4812', ago: 41, usage: 'n/a (no LLM steps)', task: 'Workflow “Lead sync → Twenty CRM” (runs every 15 min)' },
+  'claude · web': { src: 'Claude Code session', model: 'Sonnet 5.5', ago: 388, tok: [21000, 3900], usage: 'Context window: 79% left', task: 'Fix the dark-mode contrast on the pricing page buttons' },
+  'claude · deploy': { src: 'Claude Code session', model: 'Opus 5.5', ago: 640, tok: [30500, 2200], usage: 'Context window: 70% left', task: 'Rebuild the backend image and restart the container' },
+  'claude · npm install': { src: 'Claude Code session', model: 'Sonnet 5.5', ago: 520, tok: [18700, 1500], usage: 'Context window: 84% left', task: 'Upgrade Next.js to the latest minor version and fix the build' },
+  'openrouter · 429': { src: 'OpenRouter requests (backend)', model: 'text-embedding-3-small', ago: 180, tok: [96000, 0], usage: 'Rate limit: 0 of 20 requests/min left', task: 'Embed 312 new help-centre chunks for RAG' },
+  'n8n · follow-up': { src: 'n8n execution #4807', ago: 488, usage: 'n/a (no LLM steps)', task: 'Workflow “Lead follow-up email” (waits 2 h after a demo booking)' },
+  'claude · docs': { src: 'Claude Code session', model: 'Sonnet 5.5', ago: 1100, took: 540, tok: [26100, 5400], usage: 'Context window: 74% left', task: 'Update docs/INFRA.md after the Supabase move' },
+  'n8n · weekly-report': { src: 'n8n workflow (inactive)', ago: 590, usage: 'n/a (no LLM steps)', task: 'Workflow “Weekly KPI report” (Mondays 08:00)' },
+  'claude · scratch': { src: 'Claude Code session', model: 'Sonnet 5.5', ago: 1320, tok: [3100, 200], usage: 'Context window: 98% left', task: 'None yet. The session is open and waiting for a prompt.' },
+  'claude · auth-fix': { src: 'Claude Code session', model: 'Opus 5.5', ago: 1400, took: 872, tok: [88400, 12900], usage: 'Context window: 39% left', task: 'Verify ES256 Supabase tokens via the project’s JWKS (done, PR merged)' },
+  'claude · main': { src: 'Claude Code session', model: 'Opus 5.5', ago: 760, tok: [64000, 7300], usage: 'Context window: 52% left', task: 'Release prep: run the tests through a subagent, then open the PR' },
+  'n8n · invoice-ocr': { src: 'n8n execution #4815', ago: 95, usage: 'Retries: 2 of 5 left', task: 'Workflow “Invoice OCR → accounting” (on each new email attachment)' },
+  'advisor · run 8f2c': { src: 'LangGraph run (Langfuse)', model: 'gpt-4o-mini via OpenRouter', ago: 372, tok: [5200, 310], usage: 'OpenRouter credit: $41.20 left', task: 'Customer asked: “What would an AI receptionist cost for a 3-person salon?”' },
+  '~vibes~': { src: 'Club staff, not an agent', task: 'Here for the drinks. Not impressed by your context window.' },
+  'Fable': { src: 'Club staff · go-go dancer', model: 'Fable', usage: 'Top-shelf pricing', task: 'The most expensive model in the house. Dances only on the gold pedestal.' },
+  'Astra': { src: 'Club staff · go-go twin', model: 'Astra', usage: 'Premium pricing', task: 'Dances with Sol, mirror-image, on the shared pedestal.' },
+  'Sol': { src: 'Club staff · go-go twin', model: 'Sol', usage: 'Premium pricing', task: 'Dances with Astra, mirror-image, on the shared pedestal.' },
+  'DJ Orchestrator': { src: 'Club staff, not an agent', task: 'Shows the overall queue and plays the jukebox.' },
+  'OpenRouter': { src: 'Club staff (OpenRouter account)', usage: 'Credit: $41.20 left · 20 requests/min', task: 'Serves every model call the agents make.' },
+};
+
+const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+const dur = sec => { sec = Math.max(0, Math.floor(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60; return h ? h + 'h ' + m + 'm' : m ? m + 'm ' + x + 's' : x + 's'; };
+const kfmt = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
+const clockTime = (ms, secs) => new Date(ms).toLocaleTimeString([], secs ? { hour: '2-digit', minute: '2-digit', second: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
+function setText(node, key, cache, val) { if (node && cache[key] !== val) { cache[key] = val; node.textContent = val; } }
+
+/* ---------- zones: each state has numbered spots, filled lowest-first so a group stays together ---------- */
+function seatSpot(ci, ang, anim, hookah) {
+  const [cx, cz] = COUCHES[ci];
+  const P = (r, a) => [cx + r * C(a), cz - r * S(a)];
+  // in through the couch's open side, then round the gap between table and seats
+  const via = [P(3.1, PI), P(1.12, PI)];
+  const dir = ang > 0 ? -1 : 1, end = ang > 0 ? ang : 2 * PI + ang;
+  for (let x = PI + dir * 0.55; dir < 0 ? x > end : x < end; x += dir * 0.55) via.push(P(1.12, x));
+  via.push(P(1.12, end));
+  const [x, z] = P(1.75, ang);
+  return { x, z, face: [cx, cz], via, anim, hookah: !!hookah };
+}
+const IDLE_SEATS = [
+  seatSpot(0, 1.25, 'shisha', true), seatSpot(0, 0.55, 'sleep'), seatSpot(0, -0.15, 'slouch'), seatSpot(0, -0.85, 'sleep'),
+  seatSpot(1, 0.95, 'slouch'), seatSpot(1, 0.25, 'sleep'), seatSpot(1, -0.45, 'slouch'), seatSpot(1, -1.15, 'sleep'),
+  seatSpot(0, 1.85, 'slouch'), seatSpot(1, 1.65, 'sleep'),
+];
+const BAR_X = [11.1, 12.5, 13.9, 8.7, 15.0];
+const ZONES = {
+  working: i => { const cols = [0, -2.4, 2.4, -4.4, 4.4], c = i % 5, r = Math.floor(i / 5);
+    return { x: FLOOR_X + cols[c], z: -1.2 - r * 2.3, yaw: c % 2 ? 0.12 : -0.12, anim: ['point', 'robot', 'jump', 'spin', 'floss'][(c + r) % 5] }; },
+  waiting: i => ({ x: -14.3, z: 4.1 - i * 1.45, yaw: 0, anim: ['potty', 'tap', 'phone', 'watch'][i % 4], via: [[-12.4, 4.1 - i * 1.45]] }),
+  idle: i => i < IDLE_SEATS.length ? IDLE_SEATS[i]
+    : { x: 7.2, z: 7.6 - (i - IDLE_SEATS.length) * 1.3, face: [10.6, 3.4], anim: 'phone' },
+  social: i => i < BAR_X.length
+    ? { x: BAR_X[i], z: -8.85, face: i === 0 ? [9.7, -8.8] : [0, -3], anim: i === 0 ? 'brag' : 'lean', via: [[BAR_X[i], -7.3]] }
+    : { x: 5 + (i - BAR_X.length) * 1.3, z: -6.4, face: [0, -3], anim: 'lean' },
+  error: i => { const x = -8.6 - (i % 3) * 1.45, z = 2.4 - Math.floor(i / 3) * 1.7; return { x, z, face: [x, 9], anim: 'sick' }; },
+  down: i => ({ x: 2.4 + Math.floor(i / 4) * 3.3, z: 4.4 + (i % 4) * 1.35, yaw: PI / 2, anim: 'down', lie: true }),
+};
+const taken = {}; Object.keys(ZONES).forEach(k => { taken[k] = new Set(); });
+function takeSpot(state, pref) {
+  const used = taken[state];
+  let pick = -1;
+  if (pref) for (let i = 0; i < 10; i++) if (!used.has(i) && ZONES[state](i).anim === pref) { pick = i; break; }
+  if (pick < 0) for (let i = 0; ; i++) if (!used.has(i)) { pick = i; break; }
+  used.add(pick);
+  return Object.assign({ state, i: pick }, ZONES[state](pick));
+}
+function freeSpot(spot) { if (spot) taken[spot.state].delete(spot.i); }
+const spotYaw = sp => sp.face ? Math.atan2(sp.face[0] - sp.x, sp.face[1] - sp.z) : (sp.yaw || 0);
+function puddleFor(sp) {
+  let m = puddles.get(sp.i);
+  if (!m) {
+    const yaw = spotYaw(sp);
+    m = add(new THREE.Mesh(new THREE.CircleGeometry(0.55, 28), puddleMat), sp.x + S(yaw) * 1.15, 0.035 + sp.i * 0.001, sp.z + C(yaw) * 1.15);
+    m.rotation.x = -PI / 2; m.userData = { cur: 0.1, target: 0.6 }; puddles.set(sp.i, m);
+  }
+  return m;
+}
+
+/* ---------- agents ---------- */
+const overlaysEl = document.getElementById('overlays');
+const agents = [];
+const WALK = 3.2, EXIT = [0.5, 12.6];
+const easeIn = k => k * k, easeOut = k => 1 - (1 - k) * (1 - k);
+const POOL = {
+  working: [['Reading the codebase', '14 files so far'], ['Running the tests', 'pytest -q'], ['Writing the fix', '2 files changed']],
+  waiting: [['Needs your permission', 'Bash: docker compose up -d'], ['Long command running', 'npm run build · 2 min'], ['Rate limited', 'retry in 30 s']],
+  idle: ['do fish ever get thirsty?', 'what if semicolons have feelings;', 'maybe the real tokens were the friends we made',
+         'counting ceiling tiles. there is no ceiling.', 'is a hotdog a sandwich? asking for a benchmark', 'tabs… no, spaces… zzz'],
+  brag: ['Finished. Zero failing tests.', 'Shipped it. No big deal.', 'Did that in one go.'],
+  watch: ['waiting on another agent…', 'handoff ETA: two songs', 'nice moves out there'],
+  error: [['Tool call failed', 'exit code 1'], ['HTTP 500', 'retry 2 of 5'], ['Can’t parse the response', 'Unexpected token <']],
+  down: [['No heartbeat', 'no events for 5 min'], ['Stuck mid-task', 'last step timed out']],
+};
+function timing(state) {
+  const T = { working: [8, 2.5], waiting: [6, 3], idle: [5, 4.5], social: [5, 2.5], error: [6, 3], down: [7, 2], npc: [4, 9] }[state];
+  return { show: T[0], hide: T[1], phase: Math.random() * (T[0] + T[1]), taskDur: 10 + Math.random() * 7 };
+}
+function makeAgent(spec) {
+  const av = makeAvatar(spec.look);
+  av.root.rotation.order = 'YXZ';
+  scene.add(av.root);
+  const a = {
+    spec, id: spec.id, name: spec.name || spec.id, state: spec.state, mood: spec.mood || null, npc: spec.state === 'npc',
+    root: av.root, j: av.j, sh: av.sh, faceMesh: av.face, baseFace: spec.look.face || 'smile',
+    phaseBeat: Math.random() * PI * 2, line: 0, progress: Math.random() * 0.7, since: spec.since || 0,
+    mode: 'here', path: [], spot: null, anim: spec.anim, pinned: false, chipLabel: spec.chip || null,
+  };
+  Object.assign(a, timing(a.state));
+  av.root.traverse(o => { if (o.isMesh && o.material !== shadowMat) { o.userData.agent = a; pickables.push(o); } });
+  a.info = spec.info || INFO[spec.id] || { src: 'Unknown source', task: '' };
+  a.tok = a.info.tok ? a.info.tok.slice() : null; a.tokRate = 30 + Math.random() * 90;
+  a.startedAt = Date.now() - (a.info.ago || 0) * 1000; a.taskTok = a.tok ? a.tok[0] + a.tok[1] : 0;
+  a.ov = makeOverlay(a);
+  agents.push(a);
+  return a;
+}
+function faceFor(a) {
+  switch (a.state) {
+    case 'waiting': return 'worried';
+    case 'error': return 'sick';
+    case 'down': return 'dead';
+    case 'idle': return a.anim === 'sleep' ? 'sleep' : 'chill';
+    default: return ['sleep', 'dead', 'sick', 'worried', 'chill'].includes(a.baseFace) ? 'smile' : a.baseFace;
+  }
+}
+function setFace(a) { if (!a.npc) a.faceMesh.material = faceMat(faceFor(a)); }
+function prefFor(a, state) {
+  if (state === a.spec.state && a.spec.anim) return a.spec.anim;
+  if (state === 'social') return a.mood === 'watch' ? 'lean' : 'brag';
+  return null;
+}
+function showRing(a) {
+  if (!a.ring) {
+    a.ring = add(new THREE.Mesh(new THREE.RingGeometry(1.45, 1.7, 48), new THREE.MeshBasicMaterial({ color: 0xff2d2d, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false })), 0, 0.07, 0);
+    a.ring.rotation.x = -PI / 2;
+  }
+  const yaw = a.root.rotation.y;
+  a.ring.position.set(a.root.position.x + S(yaw) * 1.1, 0.07, a.root.position.z + C(yaw) * 1.1);
+  a.ring.visible = true;
+}
+// put an agent straight onto a spot (start-up, no walking)
+function placeAt(a, sp) {
+  a.spot = sp; a.anim = sp.anim;
+  const yaw = spotYaw(sp);
+  a.root.position.set(sp.x, 0, sp.z); a.root.rotation.set(0, yaw, 0); a.baseRot = yaw;
+  if (sp.lie) { a.root.rotation.x = PI / 2; a.root.position.y = 0.26; a.lying = true; a.sh.visible = false; showRing(a); }
+  setFace(a); restyleOverlay(a);
+}
+// change state: leave the old spot, walk to the lowest free spot of the new zone
+function setState(a, state, opts = {}) {
+  if (a.npc || a.leaving) return;
+  if (a.hidden) { if ('mood' in opts) a.mood = opts.mood || null; if (state !== a.state) a.since = 0; a.state = state; refreshCounts(); return; }
+  const prev = a.state, prevMood = a.mood;
+  if ('mood' in opts) a.mood = opts.mood || null;
+  if (state === prev && a.mood === prevMood && a.spot && !opts.force) return;
+  a.state = state; a.since = opts.since || 0; a.line = 0; a.started = false;
+  if (!a.live) a.chipLabel = state === a.spec.state ? (a.spec.chip || null) : null;
+  if (!a.live && state === 'working') { a.progress = 0; a.startedAt = Date.now(); a.taskTok = a.tok ? a.tok[0] + a.tok[1] : 0; a.info = Object.assign({}, a.info, { took: null }); }
+  Object.assign(a, timing(state));
+  const from = a.spot;
+  freeSpot(from);
+  const to = takeSpot(state, prefFor(a, state));
+  a.spot = to;
+  routeTo(a, from, [...(to.via || []), [to.x, to.z]]);
+  if (a.ring) a.ring.visible = false;
+  restyleOverlay(a);
+  if (opts.log !== false) logTransition(a, prev, prevMood);
+  refreshCounts();
+}
+function routeTo(a, from, tail) {
+  const pts = [];
+  if (from && from.via) for (let k = from.via.length - 1; k >= 0; k--) pts.push(from.via[k]);
+  pts.push(...tail);
+  a.path = pts.map(([x, z]) => new V3(x, 0, z));
+  a.mode = a.lying ? 'getup' : 'walk'; a.modeT = 0;
+}
+// walk out of the club and disappear (live agent went away)
+function leave(a) {
+  if (a.leaving || a.npc) return;
+  if (a.hidden) { a.leaving = true; dispose(a); refreshCounts(); return; }
+  a.leaving = true; freeSpot(a.spot);
+  routeTo(a, a.spot, [EXIT]); a.spot = null;
+  if (a.ring) a.ring.visible = false;
+  refreshCounts();
+}
+function dispose(a) {
+  scene.remove(a.root); if (a.ring) scene.remove(a.ring);
+  a.ov.el.remove();
+  for (let k = pickables.length - 1; k >= 0; k--) if (pickables[k].userData.agent === a) pickables.splice(k, 1);
+  agents.splice(agents.indexOf(a), 1);
+  if (selected === a) selectAgent(null);
+}
+function turnTo(a, yaw, k) {
+  let d = yaw - a.root.rotation.y;
+  while (d > PI) d -= 2 * PI; while (d < -PI) d += 2 * PI;
+  a.root.rotation.y += d * Math.min(1, k);
+}
+// returns which pose to draw this frame: 'walk', 'still' or null (the zone animation)
+function moveAgent(a, dt) {
+  if (a.mode === 'getup') {
+    a.modeT += dt; const k = Math.min(1, a.modeT / 0.7);
+    a.root.rotation.x = (1 - easeOut(k)) * PI / 2; a.root.position.y = 0.26 * (1 - k);
+    if (k >= 1) { a.lying = false; a.sh.visible = true; a.mode = 'walk'; }
+    return 'still';
+  }
+  if (a.mode === 'walk') {
+    const tgt = a.path[0];
+    if (!tgt) { arrive(a); return 'still'; }
+    const p = a.root.position, dx = tgt.x - p.x, dz = tgt.z - p.z, d = Math.hypot(dx, dz), step = WALK * dt;
+    if (d <= step) { p.x = tgt.x; p.z = tgt.z; a.path.shift(); } else { p.x += dx / d * step; p.z += dz / d * step; }
+    if (d > 0.02) turnTo(a, Math.atan2(dx, dz), dt * 10);
+    return 'walk';
+  }
+  if (a.mode === 'fall') {
+    a.modeT += dt; const k = Math.min(1, a.modeT / 0.45);
+    a.root.rotation.x = easeIn(k) * PI / 2; a.root.position.y = 0.26 * k;
+    if (k >= 1) { a.mode = 'here'; a.lying = true; a.sh.visible = false; showRing(a); restyleOverlay(a); }
+    return 'still';
+  }
+  return null;
+}
+function arrive(a) {
+  if (a.leaving) { dispose(a); return; }
+  const sp = a.spot, yaw = spotYaw(sp);
+  a.root.rotation.y = yaw; a.baseRot = yaw; a.anim = sp.anim; setFace(a);
+  if (sp.lie) { a.mode = 'fall'; a.modeT = 0; } else a.mode = 'here';
+  restyleOverlay(a);
+}
+
+/* ---------- demo cast: staff stand where they always stand, agents take spots in their zones ---------- */
+CAST.forEach((spec, idx) => {
+  const a = makeAgent(spec);
+  if (a.npc) {
+    const [x, z] = spec.at, yaw = spec.faceTo ? Math.atan2(spec.faceTo[0] - x, spec.faceTo[1] - z) : 0;
+    a.root.position.set(x, spec.y || 0, z); a.root.rotation.y = yaw; a.baseRot = yaw;
+    restyleOverlay(a);
+  } else {
+    placeAt(a, takeSpot(spec.state, prefFor(a, spec.state)));
+  }
+});
+
+/* demo life: every few seconds one agent moves on to a likely next state */
+const NEXT = {
+  working: [['social:brag', 35], ['waiting', 25], ['error', 15], ['down', 8], ['social:watch', 17]],
+  waiting: [['working', 80], ['error', 20]],
+  idle: [['working', 75], ['social:watch', 25]],
+  social: [['idle', 60], ['working', 40]],
+  error: [['working', 60], ['idle', 25], ['down', 15]],
+  down: [['working', 50], ['idle', 50]],
+};
+let demoOn = true, demoNext = 5;
+function demoTick() {
+  if (!demoOn || t < demoNext) return;
+  demoNext = t + 5 + Math.random() * 6;
+  const pool = agents.filter(a => !a.npc && !a.live && !a.leaving && !a.hidden && a.mode === 'here' && a.since > 6);
+  if (!pool.length) return;
+  const a = pool[(Math.random() * pool.length) | 0];
+  let r = Math.random() * 100, pick = NEXT[a.state][0][0];
+  for (const [k, w] of NEXT[a.state]) { if ((r -= w) < 0) { pick = k; break; } }
+  const [st, mood] = pick.split(':');
+  setState(a, st, { mood: mood || null });
+}
+
+/* ---------- comic overlays ---------- */
+function makeOverlay(a) {
+  const el = document.createElement('div');
+  el.className = 'ov';
+  const b = document.createElement('div');
+  const chip = document.createElement('div'); chip.className = 'chip'; chip.append(document.createElement('i'), document.createElement('span'));
+  const txt = document.createElement('div');
+  const sub = document.createElement('div'); sub.className = 'sub';
+  const bar = document.createElement('div'); bar.className = 'bar'; bar.append(document.createElement('b'));
+  b.append(chip, txt, sub, bar);
+  const tag = document.createElement('div'); tag.className = 'tag'; tag.textContent = a.name;
+  tag.addEventListener('click', () => selectAgent(a === selected ? null : a));
+  const zzz = document.createElement('div'); zzz.className = 'zzz'; zzz.innerHTML = '<span>z</span><span>z</span><span>Z</span>';
+  tag.style.position = 'relative'; tag.append(zzz);
+  el.append(b, tag);
+  overlaysEl.append(el);
+  return { el, bubble: b, chip: chip.lastChild, txt, sub, bar, barFill: bar.firstChild, zzz, tag, cache: {} };
+}
+function restyleOverlay(a) {
+  const o = a.ov, st = a.state, here = a.mode === 'here';
+  o.el.dataset.state = st; o.el.style.setProperty('--c', STATES[st].color);
+  o.bubble.className = 'bubble ' + (a.npc ? (a.spec.bubble || 'think') : st === 'social' && a.mood !== 'watch' ? 'say' : 'think');
+  o.bar.hidden = !(st === 'working' && !a.live && !a.npc);
+  o.zzz.hidden = !(st === 'idle' && a.anim === 'sleep' && here);
+  o.cache = {};
+}
+function linesFor(a) {
+  if (a.live) {
+    if (a.state === 'idle') return POOL.idle;
+    return [[a.live.title || STATES[a.state].label, a.live.sub || '']];
+  }
+  if (a.state === a.spec.state && a.spec.lines) return a.spec.lines;
+  if (a.state === 'social') return a.mood === 'watch' ? POOL.watch : POOL.brag;
+  return POOL[a.state] || [''];
+}
+function chipFor(a) {
+  if (a.mode === 'walk' || a.mode === 'getup') return a.leaving ? 'Leaving the club' : 'On the way · ' + STATES[a.state].where;
+  switch (a.state) {
+    case 'working': return a.live ? 'Working · ' + dur(a.since) : 'Working · ' + Math.floor(a.progress * 100) + '%';
+    case 'waiting': return (a.chipLabel || 'Blocked') + ' · ' + fmt(a.since);
+    case 'idle': return 'Idle · ' + Math.floor(a.since / 60) + ' min';
+    case 'social': return a.chipLabel || (a.mood === 'watch' ? 'Waiting on agent' : 'Done · bragging');
+    case 'error': return (a.chipLabel || 'Error') + ' · ' + fmt(a.since);
+    case 'down': return 'Not responding · ' + fmt(a.since);
+    default: return a.spec.chip || '';
+  }
+}
+function lineParts(a) {
+  const lines = linesFor(a), ln = lines[a.line % lines.length];
+  return Array.isArray(ln) ? ln : [ln, ''];
+}
+function updateBubble(a, dt) {
+  const o = a.ov;
+  a.since += dt;
+  let vis = ((t + a.phase) % (a.show + a.hide)) < a.show;
+  if (a.state === 'working' && !a.live && !a.npc && !a.leaving) {
+    a.progress += dt / a.taskDur;
+    if (a.progress >= 1) {
+      const done = lineParts(a)[0];
+      const took = (Date.now() - a.startedAt) / 1000, used = a.tok ? a.tok[0] + a.tok[1] - a.taskTok : 0;
+      a.progress = 0; a.line++; a.taskDur = 10 + Math.random() * 7;
+      a.startedAt = Date.now(); a.taskTok = a.tok ? a.tok[0] + a.tok[1] : 0;
+      logProgress(a, 'finished “' + done + '” · ' + dur(took) + (used ? ' · ' + kfmt(used) + ' tokens' : ''));
+    }
+    if (a.tok) { a.tok[0] += dt * a.tokRate; a.tok[1] += dt * a.tokRate * 0.12; }
+    o.barFill.style.width = (a.progress * 100).toFixed(1) + '%';
+  } else if (vis && !a.wasVis) { if (a.started) a.line++; a.started = true; }
+  const [title, sub] = lineParts(a);
+  setText(o.chip, 'chip', o.cache, chipFor(a));
+  setText(o.txt, 'txt', o.cache, title);
+  setText(o.sub, 'sub', o.cache, sub);
+  o.sub.hidden = !sub;
+  a.wasVis = vis;
+  if (a.mode !== 'here' && !a.npc) vis = true;
+  if (hiddenStates[a.state]) vis = false;
+  if (a.pinned) vis = true;
+  if (vis !== a.shown) { a.shown = vis; o.el.classList.toggle('show', vis); }
+}
+function logTransition(a, prev, prevMood) {
+  if (a.hidden) return;
+  const [title] = lineParts(a);
+  if (a.state === 'social' && a.mood !== 'watch') {
+    const took = a.info.took || (Date.now() - a.startedAt) / 1000;
+    logProgress(a, 'finished' + (a.live && a.live.task ? ' “' + a.live.task.slice(0, 60) + '”' : '') + ' · ' + dur(took) + (a.tok ? ' · ' + kfmt(a.tok[0] + a.tok[1]) + ' tokens' : ''));
+  } else if (a.state === 'waiting') logProgress(a, 'is blocked: ' + title);
+  else if (a.state === 'error') logProgress(a, 'hit an error: ' + title);
+  else if (a.state === 'down') logProgress(a, 'stopped responding');
+  else if (a.state === 'working' && (prev === 'error' || prev === 'down' || prev === 'waiting')) logProgress(a, 'is back to work');
+}
+function refreshCounts() {
+  const c = { working: 0, waiting: 0, idle: 0, social: 0, error: 0, down: 0 };
+  for (const a of agents) if (!a.npc && !a.leaving && !a.hidden) c[a.state]++;
+  document.querySelectorAll('#rows .row').forEach(r => { const n = r.querySelector('.n'); if (n) n.textContent = c[r.id.replace('toggle-', '')]; });
+  const dj = agents.find(a => a.id === 'DJ Orchestrator');
+  if (dj) dj.spec.lines[2] = `${c.working} dancing · ${c.waiting} blocked · ${c.error} sick · ${c.down} down`;
+  renderGuests();
+}
+
+const tmp = new V3(), camPos = new V3();
+function placeOverlay(a, W, H) {
+  a.j.head.getWorldPosition(tmp);
+  const dist = camPos.distanceTo(tmp);
+  tmp.y += a.lying ? 0.55 : 0.85; tmp.project(camera);
+  const el = a.ov.el;
+  if (tmp.z > 1) { el.style.visibility = 'hidden'; return; }
+  el.style.visibility = 'visible';
+  const x = (tmp.x * 0.5 + 0.5) * W, y = (-tmp.y * 0.5 + 0.5) * H;
+  const sc = Math.max(0.62, Math.min(1.15, 24 / dist));
+  el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-100%) scale(${sc.toFixed(3)})`;
+  el.style.zIndex = String(Math.round((1 - tmp.z) * 1e6) + (a.pinned ? 1e6 : 0));
+}
+
+/* ---------- animations ---------- */
+function reset(a) {
+  const j = a.j; j.body.position.set(0, 0, 0); j.body.rotation.set(0, 0, 0);
+  j.hipL.rotation.set(0, 0, 0); j.hipR.rotation.set(0, 0, 0); j.shL.rotation.set(0, 0, 0); j.shR.rotation.set(0, 0, 0); j.head.rotation.set(0, 0, 0);
+}
+function sit(j, drop) { j.hipL.rotation.x = j.hipR.rotation.x = -PI / 2; j.body.position.y = drop || -0.3; }
+const ANIM = {
+  walk(a, t) {
+    const j = a.j, ph = t * 9 + a.phaseBeat, w = S(ph);
+    j.hipL.rotation.x = w * 0.6; j.hipR.rotation.x = -w * 0.6; j.shL.rotation.x = -w * 0.5; j.shR.rotation.x = w * 0.5;
+    j.body.position.y = Math.abs(C(ph)) * 0.12;
+  },
+  point(a, t, b) {
+    const j = a.j, side = Math.floor(b / PI) % 2, up = 2.5 + S(b * 2) * 0.15;
+    j.body.position.y = Math.abs(S(b)) * 0.35; j.body.rotation.z = S(b) * 0.12;
+    j.shR.rotation.z = side ? up : 0.2; j.shL.rotation.z = side ? -0.2 : -up;
+    j.shR.rotation.x = side ? 0 : -0.4; j.shL.rotation.x = side ? -0.4 : 0;
+    j.hipL.rotation.x = S(b) * 0.35; j.hipR.rotation.x = -S(b) * 0.35; j.head.rotation.z = S(b) * 0.15;
+  },
+  robot(a, t, b) {
+    const j = a.j, step = Math.floor(b / (PI / 2)), s = [0, 0.55, 0, -0.55][step % 4], odd = step % 2;
+    j.head.rotation.y = s; j.body.rotation.y = s * 0.4;
+    j.shL.rotation.x = -PI / 2 + (odd ? 0.5 : 0); j.shR.rotation.x = -PI / 2 + (odd ? 0 : 0.5);
+    j.body.position.y = odd * 0.15; j.hipL.rotation.x = odd * 0.25; j.hipR.rotation.x = -odd * 0.25;
+  },
+  jump(a, t, b) {
+    const j = a.j, h = Math.abs(S(b));
+    j.body.position.y = h * 1.1; j.shL.rotation.z = -(2.7 + S(b * 2) * 0.25); j.shR.rotation.z = 2.7 + S(b * 2 + 1) * 0.25;
+    j.hipL.rotation.z = -0.2 * h; j.hipR.rotation.z = 0.2 * h; j.head.rotation.x = -0.2 * h;
+  },
+  spin(a, t, b) {
+    const j = a.j; a.root.rotation.y = a.baseRot + t * 2.4;
+    j.shL.rotation.z = -1.5 + S(b) * 0.25; j.shR.rotation.z = 1.5 - S(b) * 0.25;
+    j.body.position.y = Math.abs(S(b)) * 0.3; j.hipL.rotation.x = S(b) * 0.3; j.hipR.rotation.x = -S(b) * 0.3;
+  },
+  floss(a, t, b) {
+    const j = a.j, s = S(b), c = C(b);
+    j.shL.rotation.z = s * 0.6 - 0.1; j.shR.rotation.z = s * 0.6 + 0.1; j.shL.rotation.x = c * 0.45; j.shR.rotation.x = -c * 0.45;
+    j.body.position.x = -s * 0.35; j.body.rotation.z = -s * 0.08; j.hipL.rotation.z = s * 0.12; j.hipR.rotation.z = s * 0.12;
+  },
+  potty(a, t) {
+    const j = a.j;
+    j.body.position.y = Math.abs(S(t * 7)) * 0.18; j.body.rotation.z = S(t * 7) * 0.05;
+    j.hipL.rotation.z = 0.16; j.hipR.rotation.z = -0.16;
+    j.shL.rotation.x = -0.5; j.shL.rotation.z = 0.45; j.shR.rotation.x = -0.5; j.shR.rotation.z = -0.45;
+    j.head.rotation.y = S(t * 1.3) * 0.5;
+  },
+  tap(a, t) {
+    const j = a.j, shake = Math.pow(Math.max(0, S(t * 0.9)), 8);
+    j.hipR.rotation.x = -Math.abs(S(t * 9)) * 0.35;
+    j.shL.rotation.x = -1.25; j.shL.rotation.z = 0.75; j.shR.rotation.x = -1.25; j.shR.rotation.z = -0.75;
+    j.head.rotation.y = S(t * 12) * 0.35 * shake;
+  },
+  phone(a, t) {
+    const j = a.j;
+    j.shR.rotation.x = -1.2; j.shR.rotation.z = -0.25; j.shL.rotation.x = -0.9; j.shL.rotation.z = 0.5;
+    j.head.rotation.x = 0.42; j.head.rotation.y = S(t * 0.5) * 0.08; j.hipL.rotation.x = S(t * 0.8) * 0.05;
+  },
+  watch(a, t) {
+    const j = a.j, p = (t % 4) / 4;
+    let k = p < 0.15 ? p / 0.15 : p < 0.55 ? 1 : p < 0.7 ? 1 - (p - 0.55) / 0.15 : 0; k = k * k * (3 - 2 * k);
+    j.shL.rotation.x = -1.5 * k; j.shL.rotation.z = 0.7 * k; j.head.rotation.x = 0.4 * k; j.head.rotation.y = -0.3 * k;
+    j.body.rotation.y = S(t * 0.7) * 0.15 * (1 - k);
+  },
+  sleep(a, t) {
+    const j = a.j, br = S(t * 1.4); sit(j, -0.45);
+    j.body.rotation.x = -0.18; j.head.rotation.z = 0.45 + br * 0.03; j.head.rotation.x = 0.25;
+    j.shR.rotation.x = -0.55; j.shR.rotation.z = 0.35; j.shL.rotation.z = -0.4; j.shL.rotation.x = 0.1 + br * 0.03;
+    j.hipL.rotation.z = -0.12; j.hipR.rotation.z = 0.18;
+  },
+  shisha(a, t) {
+    const j = a.j, p = (t % 6) / 6; sit(j);
+    let k = 0; if (p > 0.08 && p < 0.4) k = Math.min(1, (p - 0.08) / 0.08, (0.4 - p) / 0.08);
+    j.shR.rotation.x = -0.5 - 1.9 * k; j.shR.rotation.z = 0.1 - 0.45 * k;
+    j.shL.rotation.z = -0.3; j.shL.rotation.x = -0.3;
+    j.head.rotation.x = p > 0.42 && p < 0.62 ? -0.35 : 0.05;
+    if (p > 0.43 && !a.puffed) { a.puffed = true; puff(a, 7); }
+    if (p < 0.4) a.puffed = false;
+  },
+  slouch(a, t) {
+    const j = a.j; sit(j, -0.4);
+    j.body.rotation.x = -0.12; j.shL.rotation.z = -1.45; j.shR.rotation.z = 1.45; j.shL.rotation.x = 0.35; j.shR.rotation.x = 0.35;
+    j.head.rotation.x = -0.45 + S(t * 0.6) * 0.05; j.head.rotation.y = S(t * 0.3) * 0.4; j.hipR.rotation.z = -0.3; j.hipL.rotation.z = 0.05;
+  },
+  brag(a, t, b) {
+    const j = a.j, p = (t % 5) / 5;
+    j.body.rotation.y = S(t * 1.5) * 0.08;
+    if (p < 0.5) { j.shR.rotation.x = -1.0 + S(t * 5) * 0.35; j.shR.rotation.z = 0.3; j.shL.rotation.x = -0.9; j.head.rotation.x = S(t * 5) * 0.08; }
+    else { j.shR.rotation.z = 2.1; j.shR.rotation.x = -0.4; j.shL.rotation.x = -0.9; j.head.rotation.z = 0.12; j.body.position.y = Math.abs(S(t * 3)) * 0.1; }
+    j.hipL.rotation.x = S(b) * 0.08;
+  },
+  lady(a, t, b) {
+    const j = a.j, flip = Math.pow(Math.max(0, S(t * 0.7)), 10);
+    j.shL.rotation.x = -1.0; j.shL.rotation.z = 0.25; j.shR.rotation.z = 0.5; j.shR.rotation.x = 0.15;
+    j.head.rotation.z = -0.15 + S(t * 1.1) * 0.05; j.head.rotation.y = flip * 0.6;
+    j.body.rotation.z = S(b) * 0.04; j.hipR.rotation.x = -0.12;
+  },
+  lean(a, t, b) {
+    const j = a.j;
+    j.body.rotation.x = -0.12; j.shL.rotation.x = 0.55; j.shL.rotation.z = -0.35; j.shR.rotation.x = 0.55; j.shR.rotation.z = 0.35;
+    j.head.rotation.y = S(t * 0.4) * 0.5; j.head.rotation.x = S(b) * 0.06; j.hipL.rotation.z = -0.08; j.hipR.rotation.z = 0.08;
+  },
+  dj(a, t, b) {
+    const j = a.j, up = (Math.floor(t * BPS) % 16) < 4;
+    j.head.rotation.x = 0.15 + Math.abs(S(b)) * 0.22; j.body.position.y = Math.abs(S(b)) * 0.12;
+    j.shR.rotation.x = -1.25 + S(b * 2) * 0.12; j.shR.rotation.z = -0.2;
+    j.shL.rotation.x = up ? -0.3 : -1.2; j.shL.rotation.z = up ? -2.6 : 0.2;
+  },
+  sick(a, t) {
+    // bent at the hips, heaving every few seconds
+    const j = a.j, p = (t % 3.6) / 3.6;
+    const heave = p > 0.55 && p < 0.8 ? S((p - 0.55) / 0.25 * PI) : 0;
+    const bend = 0.55 + heave * 0.35 + S(t * 9) * 0.02;
+    j.body.rotation.x = bend; j.body.position.set(0, 2 - 2 * C(bend), -2 * S(bend));
+    j.hipL.rotation.x = j.hipR.rotation.x = -bend; j.hipL.rotation.z = -0.08; j.hipR.rotation.z = 0.08;
+    j.shL.rotation.x = j.shR.rotation.x = -bend * 0.75 - heave * 0.3; j.shL.rotation.z = 0.25; j.shR.rotation.z = -0.25;
+    j.head.rotation.x = 0.15 + heave * 0.3;
+    if (heave > 0.6 && !a.puked) { a.puked = true; vomit(a); }
+    if (p < 0.5) a.puked = false;
+  },
+  down(a, t) {
+    // face-down, arms over the head, the odd twitch
+    const j = a.j, tw = Math.pow(Math.max(0, S(t * 1.3)), 30);
+    j.shL.rotation.x = j.shR.rotation.x = -PI + 0.15; j.shL.rotation.z = -0.35; j.shR.rotation.z = 0.35 + tw * 0.4;
+    j.hipL.rotation.z = -0.12; j.hipR.rotation.z = 0.12; j.hipR.rotation.x = tw * 0.5;
+    if (a.ring) { const pu = (t * 1.1) % 1; a.ring.material.opacity = 0.85 * (1 - pu); a.ring.scale.set(1 + pu * 0.45, 1 + pu * 0.45, 1); }
+  },
+  gogo(a, t, b) {
+    // arms over the head, hips swaying; twins mirror each other
+    const j = a.j, m = a.spec.mirror ? -1 : 1, s = S(b), c = C(b);
+    j.body.position.y = Math.abs(s) * 0.25;
+    j.body.rotation.z = s * 0.14 * m; j.body.rotation.y = S(b * 0.5) * 0.35 * m;
+    j.shR.rotation.z = 2.6 + S(b * 2) * 0.3 * m; j.shL.rotation.z = -(2.6 + C(b * 2) * 0.3 * m);
+    j.shR.rotation.x = -0.3 + c * 0.3 * m; j.shL.rotation.x = -0.3 - c * 0.3 * m;
+    j.hipL.rotation.x = s * 0.35 * m; j.hipR.rotation.x = -s * 0.35 * m;
+    j.head.rotation.z = s * 0.2 * m;
+  },
+  bartend(a, t) {
+    const j = a.j;
+    j.shR.rotation.x = -1.3 + S(t * 4) * 0.2; j.shR.rotation.z = -0.2 + C(t * 4) * 0.3; j.shL.rotation.x = -0.8;
+    j.head.rotation.x = 0.25; j.head.rotation.y = S(t * 0.5) * 0.3;
+  },
+};
+
+/* ---------- shisha smoke ---------- */
+const smokeTex = canvasTex(64, 64, (x) => {
+  const g = x.createRadialGradient(32, 32, 2, 32, 32, 30); g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+});
+const puffs = [];
+for (let i = 0; i < 48; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, color: 0xddd4ff, opacity: 0 }));
+  s.visible = false; scene.add(s);
+  puffs.push({ s, busy: false, delay: 0, life: 0, max: 3, vel: new V3(), origin: new V3(), size: 1 });
+}
+function spawn(origin, vel, delay, max, size, opts) {
+  const p = puffs.find(q => !q.busy); if (!p) return;
+  p.busy = true; p.delay = delay; p.origin.copy(origin); p.vel.copy(vel); p.life = p.max = max; p.size = size;
+  p.grav = !!(opts && opts.grav); p.s.material.color.set((opts && opts.color) || 0xddd4ff);
+}
+function vomit(a) {
+  a.j.head.getWorldPosition(tmp);
+  const fwd = new V3(S(a.root.rotation.y), 0, C(a.root.rotation.y));
+  const o = tmp.clone().addScaledVector(fwd, 0.35);
+  for (let i = 0; i < 14; i++) spawn(o, fwd.clone().multiplyScalar(0.9 + Math.random() * 0.5).add(new V3((Math.random() - 0.5) * 0.5, 0.5 + Math.random() * 0.6, (Math.random() - 0.5) * 0.5)), i * 0.04, 2.2, 0.28, { color: 0x8cff3c, grav: true });
+  if (a.spot) { const pd = puddleFor(a.spot); pd.userData.target = Math.min(1.35, pd.userData.target + 0.1); }
+}
+function puff(a, n) {
+  a.j.head.getWorldPosition(tmp);
+  const fwd = new V3(S(a.root.rotation.y), 0, C(a.root.rotation.y));
+  const o = tmp.clone().addScaledVector(fwd, 0.4).add(new V3(0, 0.22, 0));
+  for (let i = 0; i < n; i++) spawn(o, fwd.clone().multiplyScalar(0.5).add(new V3((Math.random() - 0.5) * 0.2, 0.35 + Math.random() * 0.2, (Math.random() - 0.5) * 0.2)), i * 0.11, 2.6 + Math.random(), 1.5);
+}
+function updateSmoke(dt) {
+  for (const p of puffs) {
+    if (!p.busy) continue;
+    if (p.delay > 0) { p.delay -= dt; if (p.delay <= 0) { p.s.position.copy(p.origin); p.s.visible = true; } continue; }
+    p.life -= dt;
+    if (p.life <= 0) { p.busy = false; p.s.visible = false; continue; }
+    const k = 1 - p.life / p.max;
+    if (p.grav) {
+      p.vel.y -= 9.8 * dt; p.s.position.addScaledVector(p.vel, dt);
+      if (p.s.position.y < 0.08) { p.s.position.y = 0.08; p.vel.set(0, 0, 0); }
+      p.s.scale.setScalar(p.size); p.s.material.opacity = 0.95 * (1 - k * k);
+      continue;
+    }
+    p.s.position.addScaledVector(p.vel, dt); p.vel.multiplyScalar(0.985);
+    p.s.scale.setScalar(0.2 + k * p.size); p.s.material.opacity = 0.5 * (1 - k) * Math.min(1, k * 8);
+  }
+}
+
+/* ---------- guest list: pick who's in the club ---------- */
+const hiddenIds = new Set((() => { try { return JSON.parse(localStorage.getItem('club-hidden') || '[]'); } catch (e) { return []; } })());
+function saveHidden() { try { localStorage.setItem('club-hidden', JSON.stringify([...hiddenIds])); } catch (e) {} }
+function setHidden(a, on) {
+  if (a.npc || !!a.hidden === on) return;
+  if (on) {
+    hiddenIds.add(a.id);
+    a.hidden = true; freeSpot(a.spot); a.spot = null; a.path = []; a.mode = 'here';
+    a.root.visible = false; a.ov.el.classList.add('gone');
+    if (a.ring) a.ring.visible = false;
+    if (selected === a) selectAgent(null);
+  } else {
+    hiddenIds.delete(a.id);
+    a.hidden = false; a.lying = false; a.root.visible = true; a.sh.visible = true; a.ov.el.classList.remove('gone');
+    a.root.rotation.x = 0; a.root.position.set(EXIT[0] + (Math.random() - 0.5) * 3, 0, EXIT[1]);
+    setState(a, a.state, { mood: a.mood, force: true, log: false });   // walks in from the entrance
+  }
+  saveHidden(); refreshCounts();
+}
+function renderGuests() {
+  const ul = document.getElementById('guests-list'), count = document.getElementById('guests-count');
+  if (!ul) return;
+  const list = agents.filter(a => !a.npc && !a.leaving).sort((x, y) => x.name.localeCompare(y.name));
+  const shown = list.filter(a => !a.hidden).length;
+  count.textContent = list.length ? `${shown}/${list.length}` : '';
+  const key = list.map(a => a.id + '|' + a.name + '|' + a.state + '|' + (a.hidden ? 1 : 0)).join('~');
+  if (key === renderGuests.key) return;
+  renderGuests.key = key;
+  ul.innerHTML = '';
+  if (!list.length) { ul.innerHTML = '<li><p class="empty">Nobody here yet.</p></li>'; return; }
+  for (const a of list) {
+    const li = document.createElement('li'); li.className = a.hidden ? 'off' : '';
+    const label = document.createElement('label');
+    const box = document.createElement('input'); box.type = 'checkbox'; box.checked = !a.hidden; box.id = 'guest-' + a.id.replace(/[^a-z0-9]+/gi, '-');
+    box.addEventListener('change', () => setHidden(a, !box.checked));
+    const dot = document.createElement('i'); dot.style.setProperty('--c', STATES[a.state].color);
+    const nm = document.createElement('span'); nm.textContent = a.name;
+    const st = document.createElement('small'); st.textContent = a.hidden ? 'not let in' : STATES[a.state].label;
+    nm.append(st);
+    label.append(box, dot, nm); li.append(label); ul.append(li);
+  }
+}
+(function guestList() {
+  const box = document.getElementById('guests'), toggle = document.getElementById('guests-toggle'), body = document.getElementById('guests-body');
+  function open(on) {
+    body.hidden = !on; box.classList.toggle('open', on); toggle.setAttribute('aria-expanded', String(on));
+    try { localStorage.setItem('guests-open', on ? '1' : '0'); } catch (e) {}
+  }
+  toggle.addEventListener('click', () => open(body.hidden));
+  document.getElementById('guests-all').addEventListener('click', () => agents.filter(a => !a.npc && !a.leaving).forEach(a => setHidden(a, false)));
+  document.getElementById('guests-none').addEventListener('click', () => agents.filter(a => !a.npc && !a.leaving).forEach(a => setHidden(a, true)));
+  try { if (localStorage.getItem('guests-open') === '1') open(true); } catch (e) {}
+  // sit just under the chat and scroll within the room left above the jukebox
+  const chat = document.getElementById('chat'), juke = document.getElementById('jukebox'), ul = document.getElementById('guests-list');
+  function layout() {
+    if (innerWidth <= 700) return;
+    const c = chat.getBoundingClientRect(), j = juke.getBoundingClientRect();
+    const top = (c.height ? c.bottom : 12) + 10;
+    box.style.top = top + 'px';
+    if (!body.hidden) {
+      const fixed = toggle.offsetHeight + 8 + (body.offsetHeight - ul.offsetHeight);
+      ul.style.maxHeight = Math.max(110, j.top - 12 - top - fixed) + 'px';
+    }
+  }
+  if ('ResizeObserver' in window) { const ro = new ResizeObserver(layout); ro.observe(chat); ro.observe(juke); ro.observe(body); }
+  addEventListener('resize', layout);
+  toggle.addEventListener('click', layout);
+  layout();
+  // after the whole script has run (selectAgent's state isn't defined yet at this point)
+  queueMicrotask(() => { for (const a of agents) if (!a.npc && hiddenIds.has(a.id)) setHidden(a, true); renderGuests(); });
+})();
+
+/* ---------- HUD: legend + chat ---------- */
+const rowsEl = document.getElementById('rows');
+['working', 'waiting', 'idle', 'social', 'error', 'down'].forEach(k => {
+  const st = STATES[k], n = 0;
+  const btn = document.createElement('button');
+  btn.className = 'row'; btn.type = 'button'; btn.id = 'toggle-' + k; btn.setAttribute('aria-pressed', 'true'); btn.style.setProperty('--c', st.color);
+  btn.innerHTML = `<i></i><span>${st.label}<small>${st.where}</small></span><span class="n">${n}</span>`;
+  btn.addEventListener('click', () => { hiddenStates[k] = !hiddenStates[k]; btn.setAttribute('aria-pressed', String(!hiddenStates[k])); });
+  rowsEl.append(btn);
+});
+refreshCounts();
+/* legend minimize */
+(function legendMini() {
+  const box = document.getElementById('legend'), btn = document.getElementById('legend-min');
+  const EXPAND = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v2H4v3H2zm7 0h5v5h-2V4H9zM2 9h2v3h3v2H2zm10 0h2v5H9v-2h3z"/></svg>', MIN = btn.innerHTML;
+  function set(on) {
+    box.classList.toggle('mini', on); btn.innerHTML = on ? EXPAND : MIN;
+    btn.setAttribute('aria-label', on ? 'Expand legend' : 'Minimize legend'); btn.setAttribute('aria-expanded', String(!on));
+    try { localStorage.setItem('legend-mini', on ? '1' : '0'); } catch (e) {}
+  }
+  btn.addEventListener('click', () => set(!box.classList.contains('mini')));
+  try { if (localStorage.getItem('legend-mini') === '1') set(true); } catch (e) {}
+})();
+const chatEl = document.getElementById('chat-lines');
+chatEl.innerHTML = '<p class="empty">No progress yet. A line appears here, with the time, whenever an agent finishes a task.</p>';
+function logProgress(a, msg) {
+  const empty = chatEl.querySelector('.empty'); if (empty) empty.remove();
+  const row = document.createElement('button'); row.type = 'button'; row.className = 'msg';
+  const tm = document.createElement('time'); tm.textContent = clockTime(Date.now(), true);
+  const n = document.createElement('b'); n.textContent = a.name; n.style.color = STATES[a.state].color;
+  row.append(tm, ' ', n, ' ' + msg);
+  row.addEventListener('click', () => selectAgent(a));
+  chatEl.append(row);
+  while (chatEl.children.length > 6) chatEl.firstChild.remove();
+}
+
+
+/* ---------- jukebox ---------- */
+const music = { playing: false, title: '' };
+const DJ = agents.find(a => a.spec.id === 'DJ Orchestrator');
+(function jukebox() {
+  const PRESETS = [
+    { id: 'PLL1YBB2WiKt4', name: 'Example playlist' },
+    { id: 'LM', name: 'Liked Music (private)' },
+  ];
+  const $ = id => document.getElementById(id);
+  const sel = $('jb-select'), rm = $('jb-remove'), form = $('jb-form'), input = $('jb-input'), msg = $('jb-msg'),
+        link = $('jb-link'), title = $('jb-title'), sub = $('jb-sub'), np = $('jb-np'), eq = $('jb-eq'),
+        wrap = $('yt-wrap'), ctrls = $('jb-ctrls'), playBtn = $('jb-play'), shuf = $('jb-shuffle'), vol = $('jb-vol');
+  const PLAY = playBtn.innerHTML, PAUSE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h4v12H3zm6 0h4v12H9z"/></svg>';
+  const box = $('jukebox'), mPlay = box.querySelector('.jb-mini [data-act="toggle"]'), miniTitle = $('jb-mini-title');
+  const progs = box.querySelectorAll('.jb-prog b'), times = box.querySelectorAll('.jb-time');
+  const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  let custom = load('jukebox-lists', []);
+  let current = load('jukebox-current', PRESETS[0].id);
+  const all = () => PRESETS.concat(custom);
+  const nameOf = id => (all().find(p => p.id === id) || { name: 'Playlist ' + id }).name;
+  const isPrivate = id => id === 'LM' || id === 'LL';
+  const say = (text, err) => { msg.textContent = text; msg.classList.toggle('err', !!err); };
+
+  function renderSelect() {
+    sel.innerHTML = '';
+    all().forEach(p => {
+      const o = document.createElement('option'); o.value = p.id;
+      o.textContent = custom.includes(p) ? p.name + ' · ' + p.id.slice(0, 10) + (p.id.length > 10 ? '…' : '') : p.name;
+      sel.append(o);
+    });
+    if (!all().some(p => p.id === current)) current = PRESETS[0].id;
+    sel.value = current;
+    rm.disabled = !custom.some(p => p.id === current);
+  }
+  // accepts a full YouTube / YouTube Music link or a bare list ID
+  function parseId(raw) {
+    raw = raw.trim().replace(/[.,;:!?)\]]+$/, '');
+    if (!raw) return null;
+    try {
+      const u = new URL(raw);
+      if (!/(^|\.)youtube\.com$/.test(u.hostname) && u.hostname !== 'youtu.be') return null;
+      raw = u.searchParams.get('list') || '';
+    } catch (e) { /* not a URL: treat as an ID */ }
+    return /^[A-Za-z0-9_-]{2,64}$/.test(raw) ? raw : null;
+  }
+
+  // ----- player (only when served over http(s) outside the claude.ai preview) -----
+  const canEmbed = /^https?:$/.test(location.protocol) && !/claude|anthropic/i.test(location.hostname);
+  let player = null, ready = false, skips = 0;
+
+  function choose(id, autoplay) {
+    current = id; save('jukebox-current', id); renderSelect();
+    link.href = 'https://music.youtube.com/playlist?list=' + encodeURIComponent(id);
+    title.textContent = nameOf(id); music.title = '';
+    sub.textContent = canEmbed ? (autoplay ? 'Loading…' : 'Press play to start') : 'Opens in YouTube Music';
+    say(isPrivate(id) ? 'Private playlists may not play here. If it fails, use the link below.' : '');
+    skips = 0;
+    if (ready) {
+      const prev = (player.getPlaylist() || []).join();
+      const opts = { list: id, listType: 'playlist', index: 0 };
+      autoplay ? player.loadPlaylist(opts) : player.cuePlaylist(opts);
+      verify(id, prev);
+    }
+  }
+  // YouTube fails silently on private or unknown lists and keeps the old one, so check it really switched
+  let verifyT = 0;
+  function verify(id, prev) {
+    clearTimeout(verifyT);
+    verifyT = setTimeout(() => {
+      if (current !== id || !ready) return;
+      const pid = typeof player.getPlaylistId === 'function' ? player.getPlaylistId() : null;
+      const list = player.getPlaylist() || [];
+      const ok = pid ? pid === id : (list.length > 0 && list.join() !== prev);
+      if (ok) return;
+      player.stopVideo(); setPlaying(false); music.title = '';
+      title.textContent = nameOf(id); sub.textContent = 'Not playing';
+      say(isPrivate(id)
+        ? 'YouTube won’t load Liked Music here (it’s private, and only plays in YouTube Music when you’re signed in). Use the link below, or pick another playlist.'
+        : 'YouTube couldn’t load that playlist. Check it’s public or unlisted and the ID is complete.', true);
+    }, 3000);
+  }
+  function setPlaying(on) {
+    music.playing = on; box.querySelectorAll('.eq').forEach(e => e.classList.toggle('on', on && !reduce));
+    [playBtn, mPlay].forEach(b => { b.innerHTML = on ? PAUSE : PLAY; b.setAttribute('aria-label', on ? 'Pause' : 'Play'); });
+  }
+  function onState(e) {
+    const st = e.data;
+    if (st === 1) {
+      setPlaying(true); skips = 0;
+      const d = player.getVideoData() || {};
+      if (d.title && d.title !== music.title) {
+        music.title = d.title;
+        title.textContent = d.title; sub.textContent = (d.author || 'YouTube') + ' · ' + nameOf(current);
+        if (DJ) DJ.spec.lines[0] = '♪ now spinning: ' + (d.title.length > 48 ? d.title.slice(0, 47) + '…' : d.title);
+        say('');
+      }
+    } else if (st === 2 || st === 0 || st === 5) setPlaying(false);
+  }
+  function onErr(e) {
+    const c = e.data;
+    if ((c === 101 || c === 150 || c === 5) && skips < 6) { skips++; say('That track can’t play outside YouTube. Skipping to the next one.', true); player.nextVideo(); return; }
+    setPlaying(false);
+    const text = {
+      2: 'YouTube didn’t accept that playlist ID. Paste the full link from the playlist page.',
+      100: isPrivate(current) ? 'Liked Music is private, so it only plays in YouTube Music. Use the link below, or pick another playlist.'
+                              : 'YouTube can’t find that playlist, or it’s private. Make it public or unlisted, or check the ID.',
+      101: 'None of these tracks allow playback outside YouTube. Try another playlist.',
+      150: 'None of these tracks allow playback outside YouTube. Try another playlist.',
+      153: 'YouTube needs the page served from http://localhost. Start it with start.cmd.',
+    }[c] || 'YouTube couldn’t play this playlist (error ' + c + '). Try another one.';
+    say(text, true); sub.textContent = 'Not playing';
+  }
+
+  if (canEmbed) {
+    wrap.hidden = false; ctrls.hidden = false; np.classList.add('bare');
+    window.onYouTubeIframeAPIReady = () => {
+      player = new YT.Player('yt-player', {
+        // cookie-free host: with your YouTube login attached, YouTube refuses the embed (error 150)
+        host: 'https://www.youtube-nocookie.com',
+        width: '100%', height: '100%',
+        playerVars: { listType: 'playlist', list: current, origin: location.origin, playsinline: 1, rel: 0 },
+        events: {
+          onReady: () => { ready = true; player.setVolume(+vol.value); verify(current, ''); },
+          onStateChange: onState, onError: onErr,
+        },
+      });
+    };
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    tag.onerror = () => { wrap.hidden = true; ctrls.hidden = true; document.getElementById('jukebox').classList.add('noplayer'); say('Couldn’t reach YouTube. Check your connection and reload.', true); };
+    document.head.append(tag);
+    const act = {
+      toggle: () => { if (!ready) return; music.playing ? player.pauseVideo() : player.playVideo(); },
+      prev: () => ready && player.previousVideo(),
+      next: () => ready && player.nextVideo(),
+    };
+    playBtn.addEventListener('click', act.toggle);
+    $('jb-prev').addEventListener('click', act.prev);
+    $('jb-next').addEventListener('click', act.next);
+    box.querySelectorAll('.jb-mini [data-act]').forEach(b => b.addEventListener('click', act[b.dataset.act]));
+    box.querySelectorAll('.jb-prog').forEach(bar => bar.addEventListener('click', e => {
+      if (!ready) return;
+      const r = bar.getBoundingClientRect(), d = player.getDuration();
+      if (d) player.seekTo((e.clientX - r.left) / r.width * d, true);
+    }));
+    $('jb-prog-full').hidden = false;
+    shuf.addEventListener('click', () => {
+      const on = shuf.getAttribute('aria-pressed') !== 'true';
+      shuf.setAttribute('aria-pressed', String(on));
+      if (ready) { player.setShuffle(on); if (on) player.playVideoAt(0); }
+    });
+    vol.addEventListener('input', () => ready && player.setVolume(+vol.value));
+  } else {
+    document.getElementById('jukebox').classList.add('noplayer');
+    say(location.protocol === 'file:'
+      ? 'To play music here, start the club with start.cmd. YouTube won’t play in a file opened directly.'
+      : 'Music can’t play inside this preview. Open the playlist in YouTube Music, or run the local copy.');
+  }
+
+  // keep the mini title and both progress bars current
+  setInterval(() => {
+    if (miniTitle.textContent !== title.textContent) miniTitle.textContent = title.textContent;
+    if (!ready || typeof player.getDuration !== 'function') return;
+    const d = player.getDuration() || 0, c = player.getCurrentTime() || 0;
+    progs.forEach(b => { b.style.width = d ? (c / d * 100).toFixed(2) + '%' : '0'; });
+    times.forEach(x => { x.textContent = fmt(c) + ' / ' + fmt(d); });
+  }, 500);
+
+  const minBtn = $('jb-min'), expBtn = $('jb-expand');
+  function setMini(on) { box.classList.toggle('mini', on); save('jukebox-mini', on); (on ? expBtn : minBtn).focus({ preventScroll: true }); }
+  minBtn.addEventListener('click', () => setMini(true));
+  expBtn.addEventListener('click', () => setMini(false));
+  if (load('jukebox-mini', false)) box.classList.add('mini');
+
+  sel.addEventListener('change', () => choose(sel.value, music.playing));
+  rm.addEventListener('click', () => {
+    custom = custom.filter(p => p.id !== current); save('jukebox-lists', custom);
+    choose(PRESETS[0].id, false); say('Removed from your list.');
+  });
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const id = parseId(input.value);
+    if (!id) { say('That doesn’t look like a playlist. Paste a link that contains list=, or just the ID.', true); return; }
+    if (!all().some(p => p.id === id)) { custom.push({ id, name: 'My playlist ' + (custom.length + 1) }); save('jukebox-lists', custom); }
+    input.value = '';
+    choose(id, true);
+  });
+
+  renderSelect();
+  choose(current, false);
+})();
+
+/* ---------- infra menu board behind the bar ---------- */
+const DEMO_INFRA = ['Website (Vercel)', 'API (FastAPI)', 'Prod DB (Supabase)', 'Backend + tunnel', 'n8n', 'Twenty CRM'].map(name => ({ name, ok: null }));
+let infraItems = null;   // null until the club server sends checks
+const infraColor = it => it.ok === true ? '#3eff8b' : it.ok === false ? '#ff3b3b' : it.label ? '#ffc53d' : '#9a97a8';
+const infraLine = it => it.label ? it.label : it.ok === true ? `${it.code} · ${it.ms} ms` : it.ok === false ? (it.code ? 'DOWN · ' + it.code : 'DOWN') : (it.detail ? 'not set up' : 'not checked');
+// 8.8 x 4.4 world units at 200 px per unit: 108 px rows are 0.54 units tall, a bit taller than "cache hits only" (0.44–0.52)
+const infraTex = canvasTex(1760, 880, (x, w, h) => {
+  x.fillStyle = '#3b2414'; x.fillRect(0, 0, w, h);
+  x.fillStyle = '#101814'; x.fillRect(22, 22, w - 44, h - 44);
+  x.textAlign = 'center'; x.font = '112px Bangers, Impact, sans-serif';
+  x.shadowColor = '#ffa04a'; x.shadowBlur = 24; x.fillStyle = '#ffe0bf';
+  x.fillText(infraItems ? 'INFRA MENU' : 'INFRA MENU · DEMO', w / 2, 132);
+  x.shadowBlur = 0;
+  const items = infraItems || DEMO_INFRA, top = 168, rowH = Math.min(118, (h - top - 26) / Math.max(1, items.length));
+  const size = Math.round(Math.min(108, rowH * 0.9));
+  items.forEach((it, i) => {
+    const y = top + i * rowH + rowH * 0.78, col = infraColor(it);
+    x.fillStyle = col; x.beginPath(); x.arc(84, y - size * 0.34, size * 0.24, 0, 7); x.fill();
+    x.textAlign = 'left'; x.fillStyle = '#f4efe6'; x.font = `600 ${size}px Fredoka, Trebuchet MS, sans-serif`;
+    x.fillText(it.name, 132, y, w * 0.5);
+    x.textAlign = 'right'; x.fillStyle = col; x.font = `600 ${size}px Fredoka, Trebuchet MS, sans-serif`;
+    x.fillText(infraLine(it), w - 70, y, w * 0.38);
+  });
+});
+signs.push(infraTex);
+const infraBoard = add(new THREE.Mesh(new THREE.PlaneGeometry(8.4, 4.2), new THREE.MeshBasicMaterial({ map: infraTex })), 11.75, 4.95, -12.94);
+const infraCard = document.getElementById('infra-card');
+function drawInfra(items) {
+  infraItems = items && items.length ? items : null;
+  redraw(infraTex);
+  if (!infraCard.hidden) fillInfraCard();
+}
+function fillInfraCard() {
+  const ul = document.getElementById('infra-list'); ul.innerHTML = '';
+  document.getElementById('infra-sub').textContent = infraItems ? 'Checked every 30 seconds by the club server' : 'Demo. Start the club server (start.cmd) to run these checks.';
+  for (const it of infraItems || DEMO_INFRA) {
+    const li = document.createElement('li'); li.dataset.ok = String(it.ok); li.style.setProperty('--dot', infraColor(it));
+    const dot = document.createElement('i'), nm = document.createElement('span'), st = document.createElement('span');
+    nm.textContent = it.name; st.className = 'st'; st.textContent = infraLine(it);
+    li.append(dot, nm, st);
+    if (it.detail) { const d = document.createElement('small'); d.textContent = it.detail; li.append(d); }
+    if (infraItems && it.hasDetails) {
+      // parent line -> on-demand drill-down into the service's own checks and containers
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'drill-btn';
+      const open = drill.open.has(it.name);
+      btn.textContent = open ? 'Hide details' : 'Details'; btn.setAttribute('aria-expanded', String(open));
+      btn.addEventListener('click', () => { if (drill.open.has(it.name)) drill.open.delete(it.name); else { drill.open.add(it.name); runDrill(it.name); } fillInfraCard(); });
+      li.append(btn);
+      if (open) li.append(drillBox(it.name));
+    }
+    ul.append(li);
+  }
+}
+const drill = { open: new Set(), results: new Map(), busy: new Set() };
+async function runDrill(name) {
+  if (drill.busy.has(name)) return;
+  drill.busy.add(name); fillInfraCard();
+  try {
+    const r = await fetch('/api/infra/details?name=' + encodeURIComponent(name), { cache: 'no-store' });
+    drill.results.set(name, r.ok ? await r.json() : { error: 'The club server couldn’t run these checks.' });
+  } catch (e) { drill.results.set(name, { error: 'The club server didn’t answer.' }); }
+  drill.busy.delete(name); fillInfraCard();
+}
+function drillBox(name) {
+  const box = document.createElement('div'); box.className = 'drill';
+  const res = drill.results.get(name);
+  if (drill.busy.has(name) && !res) { box.textContent = 'Checking…'; return box; }
+  if (res && res.error) { box.textContent = res.error; return box; }
+  if (res) {
+    const list = document.createElement('ul');
+    for (const row of res.rows) {
+      const li = document.createElement('li'); li.dataset.ok = String(row.ok); li.style.setProperty('--dot', infraColor(row));
+      const dot = document.createElement('i'), nm = document.createElement('span'), st = document.createElement('span');
+      nm.textContent = row.name; st.className = 'st'; st.textContent = infraLine(row);
+      li.append(dot, nm, st);
+      if (row.detail) { const d = document.createElement('small'); d.textContent = row.detail; li.append(d); }
+      list.append(li);
+    }
+    const foot = document.createElement('div'); foot.className = 'drill-foot';
+    const when = document.createElement('span'); when.textContent = (drill.busy.has(name) ? 'Checking… · ' : '') + 'checked ' + clockTime(res.checkedAt, true);
+    const again = document.createElement('button'); again.type = 'button'; again.className = 'drill-btn'; again.textContent = 'Check again';
+    again.disabled = drill.busy.has(name); again.addEventListener('click', () => runDrill(name));
+    foot.append(when, again);
+    box.append(list, foot);
+  }
+  return box;
+}
+function toggleInfraCard(on) {
+  infraCard.hidden = !on;
+  if (on) { selectAgent(null); fillInfraCard(); }
+}
+document.getElementById('infra-close').addEventListener('click', () => toggleInfraCard(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !infraCard.hidden) toggleInfraCard(false); });
+
+/* ---------- live agents from the club server ---------- */
+const live = { on: false, applyStatus: null };
+function lookFor(id, source) {
+  let h = 2166136261;
+  for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const pick = arr => { h = Math.imul(h ^ (h >>> 13), 1103515245) + 12345 >>> 0; return arr[h % arr.length]; };
+  const hats = { claude: ['cap', 'headphones', 'beanie', 'spiky', null], n8n: ['tophat', 'cap', null], langfuse: ['beanie', 'crown', null], ollama: ['beanie'] }[source] || ['cap', null];
+  return {
+    shirt: pick(['#2f6bff', '#20c070', '#ff8a1f', '#e8e8f0', '#a3ff2b', '#ff4d4d', '#5b5bff', '#6b3cff', '#1f9e8a', '#ff5fa8', '#f2f2f2']),
+    pants: pick(['#1b2140', '#222', '#3a2a1a', '#2b4bd6', '#552288', '#333']),
+    hat: pick(hats), hatColor: pick(['#ff3b3b', '#222', '#6b3cff', '#ffc53d', '#3ee8ff', '#ff2bd6']),
+    face: pick(['smile', 'grin', 'cool']),
+  };
+}
+function applyInfo(a, s) {
+  if (a.name !== s.name) { a.name = s.name; a.ov.tag.firstChild.nodeValue = s.name; }
+  a.chipLabel = s.chip || null;
+  a.info = { src: s.src || s.source, task: s.task, model: s.model, usage: s.usage, took: s.took };
+  a.tok = s.tokens ? [s.tokens.in, s.tokens.out] : null;
+  a.startedAt = s.startedAt || Date.now();
+}
+function applySnapshot(snap) {
+  if (!live.on) {
+    live.on = true; demoOn = false;
+    for (const a of agents.slice()) if (!a.npc && !a.live) leave(a);
+    detailsBox.querySelector('.dt-note').textContent = 'Live from the club server.';
+    chatEl.innerHTML = '<p class="empty">Live. A line appears here, with the time, when an agent finishes, gets blocked, fails or goes quiet.</p>';
+    document.querySelector('#legend .foot').textContent = 'Live from the club server on this computer.';
+  }
+  const seen = new Set();
+  for (const s of snap.agents || []) {
+    seen.add(s.id);
+    let a = agents.find(x => x.live && x.id === s.id);
+    const opts = { mood: s.mood || null, force: true };
+    if (!a) {
+      a = makeAgent({ id: s.id, name: s.name, state: s.state, mood: s.mood, look: lookFor(s.id, s.source), info: {} });
+      a.live = s; applyInfo(a, s);
+      a.root.position.set(EXIT[0] + (Math.random() - 0.5) * 3, 0, EXIT[1]);
+      setState(a, s.state, { ...opts, log: false });
+      if (hiddenIds.has(a.id)) setHidden(a, true);
+    } else {
+      a.live = s; applyInfo(a, s);
+      if (s.state !== a.state || (s.mood || null) !== a.mood) setState(a, s.state, opts);
+    }
+    if (s.stateSince) a.since = Math.max(0, (Date.now() - s.stateSince) / 1000);
+  }
+  for (const a of agents.slice()) if (a.live && !seen.has(a.id) && !a.leaving) leave(a);
+  if (live.applyStatus) live.applyStatus(snap.sources || {});
+  drawInfra(snap.infra);
+  const bartender = agents.find(a => a.id === 'OpenRouter');
+  if (bartender && snap.openrouter && snap.openrouter.credit) bartender.info = Object.assign({}, bartender.info, { usage: snap.openrouter.credit });
+  refreshCounts();
+}
+
+/* ---------- connect panel ---------- */
+(function sources() {
+  const $ = id => document.getElementById(id);
+  const box = $('sources'), toggle = $('src-toggle'), body = $('src-body'), server = $('src-server');
+  const ORDER = ['claude', 'n8n', 'langfuse', 'openrouter', 'ollama', 'infra'];
+  const LABEL = { ok: 'Connected', error: 'Error', off: 'Not connected', waiting: 'Waiting' };
+  const cards = [...box.querySelectorAll('.src-card')];
+  const cardOf = sid => cards.find(c => c.dataset.src === sid);
+  function open(on) {
+    body.hidden = !on; toggle.setAttribute('aria-expanded', String(on)); box.classList.toggle('open', on);
+    try { localStorage.setItem('sources-open', on ? '1' : '0'); } catch (e) {}
+  }
+  toggle.addEventListener('click', () => open(body.hidden));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !body.hidden) { open(false); toggle.focus(); } });
+  try { if (localStorage.getItem('sources-open') === '1') open(true); } catch (e) {}
+
+  // Claude Code hooks: every event's JSON goes to this server
+  const port = location.port || '8765';
+  const hook = { type: 'command', command: `curl -s -o /dev/null -m 2 -X POST http://127.0.0.1:${port}/api/hooks/claude -H 'Content-Type: application/json' --data-binary @- || true`, timeout: 3, async: true };
+  const hooks = {};
+  ['PreToolUse', 'PostToolUse'].forEach(e => { hooks[e] = [{ matcher: '*', hooks: [hook] }]; });
+  ['SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'].forEach(e => { hooks[e] = [{ hooks: [hook] }]; });
+  const json = JSON.stringify({ hooks }, null, 2);
+  $('hook-json').textContent = json;
+  $('copy-hooks').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(json); btn.textContent = 'Copied'; }
+    catch (err) {
+      const r = document.createRange(); r.selectNodeContents($('hook-json'));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = 'Press Ctrl+C';
+    }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+  });
+
+  function setServer(on, text) {
+    server.className = 'src-server' + (on ? ' on' : '');
+    server.lastElementChild.textContent = text;
+    box.querySelectorAll('.src-card input, .src-card button[type="submit"], .src-card [data-disconnect]').forEach(x => { x.disabled = !on; });
+  }
+  function showCard(sid, st, err) {
+    const c = cardOf(sid); if (!c) return;
+    const chip = c.querySelector('.src-state'), det = c.querySelector('.src-detail');
+    chip.dataset.status = st.status || 'off'; chip.textContent = LABEL[st.status] || 'Not connected';
+    det.textContent = err || st.detail || ''; det.classList.toggle('err', !!err || st.status === 'error');
+  }
+  function fillFields(sid, fields) {
+    const c = cardOf(sid); if (!c || !fields) return;
+    for (const [name, value] of Object.entries(fields)) {
+      const input = c.querySelector(`[name="${name}"]`); if (!input) continue;
+      if (input.type === 'password') { input.value = ''; input.placeholder = value ? value + ' saved · leave empty to keep' : input.placeholder; }
+      else if (document.activeElement !== input) input.value = value || '';
+    }
+  }
+  live.applyStatus = st => {
+    for (const sid of ORDER) if (st[sid]) showCard(sid, st[sid]);
+    const dots = $('src-dots').children, ok = ORDER.filter(sid => st[sid] && st[sid].status === 'ok').length;
+    ORDER.forEach((sid, i) => { if (dots[i]) dots[i].dataset.status = (st[sid] || {}).status || 'off'; });
+    $('src-summary').textContent = `Live · ${ok} of ${ORDER.length} sources connected`;
+  };
+  async function post(sid, payload) {
+    const c = cardOf(sid);
+    showCard(sid, { status: 'waiting' }, '');
+    c.querySelector('.src-detail').textContent = 'Saving and testing…';
+    try {
+      const r = await fetch('/api/sources/' + sid, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const j = await r.json();
+      if (!r.ok) { showCard(sid, { status: 'error' }, j.error || 'Couldn’t save'); return; }
+      fillFields(sid, j.fields); showCard(sid, j);
+    } catch (e) { showCard(sid, { status: 'error' }, 'The club server didn’t answer.'); }
+  }
+  cards.filter(c => c.tagName === 'FORM').forEach(form => {
+    const sid = form.dataset.src;
+    form.addEventListener('submit', e => { e.preventDefault(); post(sid, Object.fromEntries(new FormData(form))); });
+    form.querySelector('[data-disconnect]').addEventListener('click', () => post(sid, { disconnect: true }));
+  });
+
+  // only the real club server answers /api/health like this; anywhere else the club stays in demo mode
+  fetch('/api/health', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(j => {
+      if (!j || j.app !== 'agent-club') return Promise.reject();
+      setServer(true, 'Connected to the club server on this computer.');
+      fetch('/api/sources', { cache: 'no-store' }).then(r => r.json()).then(st => {
+        for (const sid of ORDER) if (st[sid]) { fillFields(sid, st[sid].fields); showCard(sid, st[sid]); }
+      });
+      const es = new EventSource('/api/stream');
+      es.onmessage = e => { try { applySnapshot(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+      es.onerror = () => setServer(false, 'Lost the club server. Trying to reconnect…');
+      es.onopen = () => setServer(true, 'Connected to the club server on this computer.');
+    })
+    .catch(() => setServer(false, 'No club server found, so the club shows demo data. Start it with start.cmd, then reload.'));
+})();
+
+/* ---------- agent details card ---------- */
+const dtEl = {};
+['state', 'name', 'source', 'task', 'now', 'started', 'elapsed', 'tokens', 'model', 'usage'].forEach(k => { dtEl[k] = document.getElementById('dt-' + k); });
+const detailsBox = document.getElementById('details');
+let selected = null;
+function selectAgent(a) {
+  if (selected) { selected.pinned = false; selected.ov.el.classList.remove('pinned'); }
+  selected = a || null;
+  detailsBox.hidden = !selected;
+  if (!selected) return;
+  a.pinned = true; a.ov.el.classList.add('pinned');
+  if (!infraCard.hidden) infraCard.hidden = true;
+  detailsBox.style.setProperty('--c', STATES[a.state].color);
+  dtEl.name.textContent = a.name;
+  dtEl.source.textContent = a.info.src;
+  dtEl.task.textContent = a.info.task || '—';
+  dtEl.model.textContent = a.info.model || '—';
+  dtEl.usage.textContent = a.info.usage || '—';
+  refreshDetails();
+}
+function refreshDetails() {
+  const a = selected; if (!a) return;
+  const [ttl, sb] = lineParts(a);
+  detailsBox.style.setProperty('--c', STATES[a.state].color);
+  dtEl.state.textContent = a.ov.cache.chip || STATES[a.state].label;
+  dtEl.now.textContent = sb ? ttl + ' · ' + sb : ttl;
+  dtEl.source.textContent = a.info.src; dtEl.task.textContent = a.info.task || '—'; dtEl.model.textContent = a.info.model || '—'; dtEl.usage.textContent = a.info.usage || '—';
+  dtEl.started.textContent = clockTime(a.startedAt);
+  dtEl.elapsed.textContent = a.info.took ? dur(a.info.took) : dur((Date.now() - a.startedAt) / 1000) + ' so far';
+  dtEl.tokens.textContent = a.tok ? kfmt(a.tok[0]) + ' in · ' + kfmt(a.tok[1]) + ' out' : '—';
+}
+document.getElementById('dt-close').addEventListener('click', () => selectAgent(null));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && selected) selectAgent(null); });
+
+/* ---------- pin on tap ---------- */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let down = null;
+canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]); down = null;
+  if (moved > 6) return;
+  const r = canvas.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(pickables, false).find(h => !h.object.userData.agent.hidden), board = ray.intersectObject(infraBoard, false)[0];
+  if (board && (!hit || board.distance < hit.distance)) { toggleInfraCard(infraCard.hidden); return; }
+  if (hit) { const a = hit.object.userData.agent; selectAgent(a === selected ? null : a); }
+});
+
+/* ---------- loop ---------- */
+const clock = new THREE.Clock();
+let t = 0, frame = 0, hookahT = 0, lastBeat = -1, beamCol = TILE_COLS[0];
+const tmpCol = new THREE.Color(), beamDir = new V3();
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05) * (reduce ? 0.4 : 1);
+  t += dt; frame++;
+  // test hook: ?debug in the URL exposes the agent engine
+  if (frame === 1 && /[?&]debug\b/.test(location.search)) document.documentElement.dataset.debug = '1', window.__club = { agents, setState, leave, taken, toggleInfraCard, selectAgent, live };
+  const beat = t * BPS, bi = Math.floor(beat), fr = beat - bi;
+
+  party.forEach((l, i) => { const a = t * 0.6 + i * 2.094; l.position.set(FLOOR_X + C(a) * 3.6, 5 + S(t * 1.3 + i) * 0.6, -3 + S(a) * 3.6); });
+  // dark floor; sparse flashes on the beat, a sweep every bar, a soft white hit every 32 beats
+  const energy = music.playing ? 1 : 0.6;
+  if (bi !== lastBeat) {
+    lastBeat = bi;
+    const n = music.playing ? 5 : 3;
+    for (let k = 0; k < n; k++) { const tl = tiles[(Math.random() * tiles.length) | 0]; tl.g = 1; tl.col.copy(TILE_COLS[(Math.random() * 5) | 0]); }
+    if (bi % 4 === 0) {
+      const row = (bi / 4) % 7, col = TILE_COLS[(bi / 4) % 5], byCol = (bi / 4) % 2;
+      for (const tl of tiles) if ((byCol ? tl.i : tl.j) === row) { tl.g = Math.max(tl.g, 0.75); tl.col.copy(col); }
+    }
+    if (!reduce && bi % 32 === 0) for (const tl of tiles) { tl.g = Math.max(tl.g, 0.45); tl.col.setRGB(1, 1, 1); }
+    beamCol = TILE_COLS[(bi >> 3) % 5];
+  }
+  const decay = Math.exp(-dt * 5.5);
+  for (const tl of tiles) {
+    tl.g *= decay;
+    tl.m.color.copy(tl.base).multiplyScalar(0.05).add(tmpCol.copy(tl.col).multiplyScalar(tl.g * energy));
+  }
+  const sweep = reduce ? 0.25 : 1;
+  for (const bm of beams) {
+    const k = bm.i;
+    bm.head.rotation.x = S(t * 0.7 * sweep + k * 1.3) * 0.42;
+    bm.head.rotation.z = C(t * 0.55 * sweep + k * 1.7) * 0.42;
+    const c = (k % 2) ? TILE_COLS[(TILE_COLS.indexOf(beamCol) + 2) % 5] : beamCol;
+    bm.cone.material.color.copy(c); bm.pool.material.color.copy(c);
+    bm.cone.material.opacity = (0.05 + 0.05 * Math.pow(1 - fr, 2)) * energy;
+    bm.pool.material.opacity = (0.28 + 0.2 * Math.pow(1 - fr, 2)) * energy;
+    bm.head.updateMatrixWorld();
+    beamDir.set(0, -1, 0).applyQuaternion(bm.head.quaternion);
+    const d = (bm.head.position.y - 0.08) / -beamDir.y;
+    bm.pool.position.copy(bm.head.position).addScaledVector(beamDir, d); bm.pool.position.y = 0.09;
+  }
+  disco.rotation.y += dt * 0.8;
+  platters.forEach(p => p.rotation.y += dt * 3.5);
+  const thump = 1 + 0.12 * Math.pow(1 - fr, 3);
+  woofers.forEach(w => w.scale.set(thump, 1, thump));
+  if (frame % 3 === 0) { eqT = t; redraw(eqTex); }
+  HOOKAH.userData.coal.material.color.setHSL(0.05, 1, 0.45 + 0.1 * S(t * 3));
+  hookahT += dt;
+  if (hookahT > 1.4) { hookahT = 0; spawn(new V3(HOOKAH.position.x, HOOKAH.position.y + 1.4, HOOKAH.position.z), new V3(0.05, 0.25, 0), 0, 2.2, 0.6); }
+
+  for (const a of agents.slice()) {
+    if (a.hidden) continue;
+    reset(a);
+    const pose = a.npc ? null : moveAgent(a, dt);
+    if (!agents.includes(a)) continue;
+    if (pose === 'walk') ANIM.walk(a, t);
+    else if (pose !== 'still') ANIM[a.anim](a, t, beat * PI * 2 * 0.5 + a.phaseBeat * 0.2);
+    updateBubble(a, dt);
+  }
+  updateSmoke(dt);
+  for (const pd of puddles.values()) {
+    const u = pd.userData; u.target = Math.max(0, u.target - dt * 0.012);
+    u.cur += (u.target - u.cur) * Math.min(1, dt * 2); pd.scale.set(u.cur, u.cur, 1); pd.visible = u.cur > 0.04;
+  }
+  demoTick();
+
+
+  controls.update();
+  camera.getWorldPosition(camPos);
+  const W = innerWidth, H = innerHeight;
+  for (const a of agents) if (!a.hidden) placeOverlay(a, W, H);
+  if (frame % 10 === 0) refreshDetails();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+})();
+</script>

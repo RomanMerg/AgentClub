@@ -1,0 +1,46 @@
+[
+  {
+    "name": "Website",
+    "url": "{SITE_URL}"
+  },
+  {
+    "name": "API",
+    "url": "{API_HEALTH_URL}"
+  },
+  {
+    "name": "Database (Supabase)",
+    "url": "{SUPABASE_URL}/rest/v1/{SUPABASE_HEALTH_TABLE}?select=*&limit=1",
+    "headers": {
+      "apikey": "{SUPABASE_ANON_KEY}"
+    },
+    "expect": {
+      "status": [
+        200,
+        401
+      ],
+      "bodyContains": "42501",
+      "note": "database answered (permission check)"
+    }
+  },
+  {
+    "name": "n8n",
+    "url": "{N8N_URL}/api/v1/workflows?limit=1",
+    "headers": {
+      "X-N8N-API-KEY": "{N8N_API_KEY}"
+    },
+    "auth": true,
+    "fallback": {
+      "url": "{N8N_URL}/healthz"
+    },
+    "details": [
+      {
+        "name": "n8n /healthz",
+        "url": "{N8N_URL}/healthz"
+      }
+    ]
+  },
+  {
+    "name": "Ollama",
+    "url": "{OLLAMA_URL}/api/version"
+  }
+]
