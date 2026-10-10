@@ -795,8 +795,8 @@ add(box(0.14, 3.15, 1.85, lam('#d6d2c4')), -15.9, 1.58, 5.5);
 add(new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), lam('#d4af37')), -15.8, 1.6, 4.85);
 
 /* the bin the sick agent keeps missing */
-add(cyl(0.38, 0.32, 0.9, lam('#3b3a44')), -7.7, 0.45, 3.3);
-add(cyl(0.41, 0.41, 0.06, lam('#55545f')), -7.7, 0.92, 3.3);
+// shown only while someone is in the error zone (see refreshCounts)
+const BIN = [add(cyl(0.38, 0.32, 0.9, lam('#3b3a44')), -7.7, 0.45, 3.3), add(cyl(0.41, 0.41, 0.06, lam('#55545f')), -7.7, 0.92, 3.3)];
 const puddleMat = new THREE.MeshLambertMaterial({ color: 0x8cff3c, emissive: 0x2a5a10, transparent: true, opacity: 0.85, depthWrite: false });
 const puddles = new Map();
 const postX = -13.2, posts = [5, 2, -1];
@@ -1402,6 +1402,7 @@ function logTransition(a, prev, prevMood) {
 function refreshCounts() {
   const c = { working: 0, waiting: 0, idle: 0, social: 0, error: 0, down: 0 };
   for (const a of agents) if (!a.npc && !a.leaving && !a.hidden) c[a.state]++;
+  BIN.forEach(m => { m.visible = c.error > 0; });
   document.querySelectorAll('#rows .row').forEach(r => { const n = r.querySelector('.n'); if (n) n.textContent = c[r.id.replace('toggle-', '')]; });
   const dj = agents.find(a => a.id === 'DJ Orchestrator');
   if (dj) dj.spec.lines[2] = `${c.working} dancing · ${c.waiting} blocked · ${c.error} sick · ${c.down} down`;
