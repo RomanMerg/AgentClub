@@ -389,13 +389,13 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);overfl
 
 <section id="sources" aria-label="Agent sources">
   <button type="button" id="src-toggle" class="src-pill" aria-expanded="false" aria-controls="src-body">
-    <span class="src-dots" id="src-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    <span class="src-dots" id="src-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
     <span id="src-summary">Demo data · Connect agents</span>
     <svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6l5 5 5-5z"/></svg>
   </button>
   <div id="src-body" hidden>
     <p class="src-server" id="src-server"><i></i><span>Looking for the club server…</span></p>
-    <p class="src-intro">Claude Code and Ollama need no key. n8n, Langfuse and OpenRouter do. Keys go to the club server on this computer and are saved in its <code>.env.local</code>. They’re never stored in this page or your browser, and the panel only ever shows their last four characters.</p>
+    <p class="src-intro">Claude Code, Codex and Ollama need no key. n8n, Langfuse and OpenRouter do. Keys go to the club server on this computer and are saved in its <code>.env.local</code>. They’re never stored in this page or your browser, and the panel only ever shows their last four characters.</p>
     <article class="src-card" data-src="claude">
       <header><b>Claude Code</b><span class="src-state" data-status="off">Demo</span></header>
       <p>Hooks in <code>~/.claude/settings.json</code> send every session event to the club server.</p>
@@ -405,6 +405,12 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);overfl
         <pre id="hook-json"></pre>
         <button type="button" class="txtbtn" id="copy-hooks">Copy</button>
       </details>
+      <p class="src-detail"></p>
+    </article>
+    <article class="src-card" data-src="codex">
+      <header><b>Codex</b><span class="src-state" data-status="off">Demo</span></header>
+      <p>Reads the session logs Codex writes to <code>~/.codex/sessions</code> every 3 seconds. Nothing to set up.</p>
+      <p class="feeds">Dance floor · bathroom line (approval prompts, long commands) · couch · bar (just finished) · passed out (silent mid-task)</p>
       <p class="src-detail"></p>
     </article>
     <form class="src-card" data-src="n8n">
@@ -2016,7 +2022,7 @@ function lookFor(id, source) {
   let h = 2166136261;
   for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
   const pick = arr => { h = Math.imul(h ^ (h >>> 13), 1103515245) + 12345 >>> 0; return arr[h % arr.length]; };
-  const hats = { claude: ['cap', 'headphones', 'beanie', 'spiky', null], n8n: ['tophat', 'cap', null], langfuse: ['beanie', 'crown', null], ollama: ['beanie'] }[source] || ['cap', null];
+  const hats = { claude: ['cap', 'headphones', 'beanie', 'spiky', null], n8n: ['tophat', 'cap', null], langfuse: ['beanie', 'crown', null], ollama: ['beanie'], codex: ['headphones', 'cap', null] }[source] || ['cap', null];
   return {
     shirt: pick(['#2f6bff', '#20c070', '#ff8a1f', '#e8e8f0', '#a3ff2b', '#ff4d4d', '#5b5bff', '#6b3cff', '#1f9e8a', '#ff5fa8', '#f2f2f2']),
     pants: pick(['#1b2140', '#222', '#3a2a1a', '#2b4bd6', '#552288', '#333']),
@@ -2068,7 +2074,7 @@ function applySnapshot(snap) {
 (function sources() {
   const $ = id => document.getElementById(id);
   const box = $('sources'), toggle = $('src-toggle'), body = $('src-body'), server = $('src-server');
-  const ORDER = ['claude', 'n8n', 'langfuse', 'openrouter', 'ollama', 'infra'];
+  const ORDER = ['claude', 'codex', 'n8n', 'langfuse', 'openrouter', 'ollama', 'infra'];
   const LABEL = { ok: 'Connected', error: 'Error', off: 'Not connected', waiting: 'Waiting' };
   const cards = [...box.querySelectorAll('.src-card')];
   const cardOf = sid => cards.find(c => c.dataset.src === sid);
