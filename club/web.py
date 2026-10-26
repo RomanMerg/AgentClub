@@ -42,6 +42,7 @@ def public_sources(cfg: dict, status: dict) -> dict:
         vals = {f: (config.mask(cfg.get(k, "")) if k in config.SECRETS else cfg.get(k, "")) for f, k in fields.items()}
         out[sid] = {"fields": vals, **status.get(sid, {"status": "off", "detail": "Not connected"})}
     out["claude"] = status.get("claude", {"status": "waiting", "detail": "No hook events yet."})
+    out["codex"] = status.get("codex", {"status": "off", "detail": "No Codex sessions folder."})
     return out
 
 

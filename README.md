@@ -23,6 +23,7 @@ Python 3.11+ only, no packages to install. Without the server the page runs on d
 Open **Connect agents** at the top of the page.
 
 - **Claude Code**: copy the hook config from the panel into `~/.claude/settings.json`. No key.
+- **Codex**: nothing to set up. The server tails the session logs in `~/.codex/sessions` (or `$CODEX_HOME/sessions`), one clubgoer per session from the last 3 hours.
 - **n8n**: URL + API key (n8n → Settings → n8n API).
 - **LangGraph via Langfuse**: host + public and secret key.
 - **OpenRouter**: API key (shows credit left).
@@ -40,6 +41,6 @@ hostnames and cross-site requests, and never sends keys back to the page.
 ## Files
 
 - `index.html`: the whole page (Three.js scene, HUD, jukebox)
-- `club/`: the server (`claude_hooks.py` hook state machine, `sources.py` pollers, `web.py` HTTP)
+- `club/`: the server (`claude_hooks.py` hook state machine, `codex.py` Codex log reader, `sources.py` pollers, `web.py` HTTP)
 - `tests/`: `python -m unittest discover -s tests`
 - Add `?debug` to the URL to expose the agent engine as `window.__club` for testing.

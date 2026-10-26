@@ -5,6 +5,7 @@ import argparse
 from http.server import ThreadingHTTPServer
 
 from .claude_hooks import ClaudeTracker
+from .codex import Codex
 from .runner import Runner, Ticker
 from .sources import Infra, Langfuse, N8n, Ollama, OpenRouter
 from .store import Store
@@ -24,6 +25,7 @@ class App:
             "langfuse": Runner(self.langfuse, self.store),
             "openrouter": Runner(OpenRouter(), self.store, on_result=self._credit),
             "ollama": Runner(Ollama(), self.store),
+            "codex": Runner(Codex(), self.store),
             "infra": Runner(Infra(), self.store, on_result=lambda r: self.store.set_meta("infra", r)),
         }
 

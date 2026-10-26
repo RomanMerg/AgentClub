@@ -301,3 +301,78 @@ class WebTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodexTest(unittest.TestCase):
+    """Lines shaped like the rollout logs Codex Desktop 0.164 writes."""
+
+    def line(self, t, kind, **payload):
+        return {"timestamp": iso(T0 + t), "type": kind, "payload": payload}
+
+    def session(self):
+        from club.codex import CodexSession
+        s = CodexSession(path=Path("rollout-x.jsonl"))
+        s.feed(self.line(0, "session_meta", id="abc123", cwd="C:/work/smb-automation"))
+        s.feed(self.line(1, "turn_context", model="gpt-6-luna"))
+        return s
+
+    def test_turn_tool_and_finish(self):
+        s = self.session()
+        s.feed(self.line(2, "event_msg", type="task_started"))
+        s.feed(self.line(2, "event_msg", type="item_completed", item={"type": "UserMessage", "content": [{"type": "text", "text": "fix the tests"}]}))
+        self.assertEqual((s.state, s.task), ("working", "fix the tests"))
+        s.feed(self.line(3, "response_item", type="custom_tool_call", call_id="c1", name="exec",
+                         input='const r = await tools.exec_command({cmd:"uv run pytest -q"}); text(r.output);'))
+        self.assertEqual((s.title, s.sub), ("Running a command", "uv run pytest -q"))
+        s.feed(self.line(9, "response_item", type="custom_tool_call_output", call_id="c1", output="ok"))
+        self.assertIsNone(s.tool_started)
+        s.feed(self.line(10, "event_msg", type="token_count", info={"total_token_usage": {"input_tokens": 1000, "output_tokens": 50},
+                                                                     "last_token_usage": {"input_tokens": 25840}, "model_context_window": 258400}))
+        s.feed(self.line(12, "event_msg", type="task_complete", duration_ms=10000))
+        a = s.agent()
+        self.assertEqual((a["state"], a["mood"], a["took"], a["model"]), ("social", "brag", 10, "GPT-6 Luna"))
+        self.assertEqual((a["tokens"], a["usage"]), ({"in": 1000, "out": 50}, "Context window: 90% left"))
+        s.watch(T0 + 12 + 91)
+        self.assertEqual(s.state, "idle")
+
+    def test_approval_long_tool_and_silence(self):
+        s = self.session()
+        s.feed(self.line(2, "event_msg", type="task_started"))
+        s.feed(self.line(3, "event_msg", type="exec_approval_request", command="rm -rf build"))
+        self.assertEqual((s.state, s.chip), ("waiting", "Waiting on you"))
+        s.feed(self.line(4, "response_item", type="function_call", call_id="c2", name="shell", arguments="{}"))
+        s.watch(T0 + 4 + 121)
+        self.assertEqual(s.chip, "Waiting on tool")
+        s.feed(self.line(130, "response_item", type="function_call_output", call_id="c2"))
+        self.assertEqual(s.state, "working")
+        s.watch(T0 + 130 + 301)
+        self.assertEqual(s.state, "down")
+
+    def test_poller_reads_files_incrementally_and_names_by_folder(self):
+        from datetime import datetime
+        from club.codex import Codex
+        with tempfile.TemporaryDirectory() as d:
+            now = T0 + 20
+            day = datetime.fromtimestamp(now)
+            folder = Path(d) / f"{day:%Y}" / f"{day:%m}" / f"{day:%d}"
+            folder.mkdir(parents=True)
+            f = folder / "rollout-1.jsonl"
+            lines = [self.line(0, "session_meta", id="abc123", cwd="C:/work/smb-automation"),
+                     self.line(1, "event_msg", type="task_started")]
+            f.write_text("".join(json.dumps(x) + "\n" for x in lines), encoding="utf-8")
+            import os
+            os.utime(f, (now, now))
+            src = Codex(root=Path(d), clock=lambda: now)
+            agents = src.poll({})
+            self.assertEqual(list(agents), ["codex:abc123"])
+            self.assertEqual((agents["codex:abc123"]["name"], agents["codex:abc123"]["state"]), ("codex · smb-automation", "working"))
+            with f.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(self.line(5, "event_msg", type="task_complete", duration_ms=4000)) + '\n{"partial":')
+            os.utime(f, (now, now))
+            self.assertEqual(src.poll({})["codex:abc123"]["state"], "social")
+
+    def test_helpers(self):
+        from club.codex import pretty_model, tool_summary
+        self.assertEqual(pretty_model("gpt-5.1-codex"), "GPT-5.1 Codex")
+        self.assertEqual(tool_summary("exec", 'tools.web__run({search_query:[{q:"codex hooks"}]})'), ("Searching the web", "codex hooks"))
+        self.assertEqual(tool_summary("apply_patch", "*** Update File: web/app/page.tsx\n")[0], "Editing page.tsx")
