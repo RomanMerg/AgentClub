@@ -266,6 +266,47 @@ class SourcesTest(unittest.TestCase):
         self.assertEqual((rows[0]["ok"], rows[0]["label"], rows[0]["detail"]), (False, "unhealthy", "health check: /bin/sh: curl: not found"))
         self.assertEqual((rows[1]["ok"], rows[1]["label"]), (False, "missing"))
 
+    def test_v2_rows_rebuild_runs_from_root_observations(self):
+        from club.sources import parse_io, runs_from_v2
+        self.assertEqual(parse_io('{"messages": [{"role": "user", "content": "hi"}]}'), {"messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(parse_io("plain answer"), "plain answer")
+        self.assertIsNone(parse_io(""))
+        now = T0
+        roots = [{"traceId": "t1", "id": "r1", "parentObservationId": None, "startTime": iso(now - 30), "traceName": "chat",
+                  "input": '{"messages": [{"role": "user", "content": "Price for a salon?"}]}', "output": None},
+                 {"traceId": "t2", "id": "r2", "parentObservationId": None, "startTime": iso(now - 60), "input": '"hello"', "output": '"done"'}]
+        rows = [{"traceId": "t1", "id": "g1", "parentObservationId": "r1", "type": "GENERATION", "name": "calculate_roi",
+                 "model": "gpt-4o-mini", "startTime": iso(now - 5), "usageDetails": {"input": 900, "output": 120}}]
+        runs = runs_from_v2(roots, rows)
+        self.assertEqual([t["id"] for t, _ in runs], ["t1", "t2"])
+        (t1, obs1), (t2, obs2) = runs
+        a = map_trace(t1, obs1, now, "advisor", None)
+        self.assertEqual((a["state"], a["title"], a["task"]), ("working", "calculate_roi", "Customer asked: “Price for a salon?”"))
+        self.assertEqual(t2["output"], "done")
+        self.assertEqual(obs2[0]["id"], "r2")          # a run with no child rows still has its root
+
+    def test_langfuse_poll_only_uses_v2_observations(self):
+        from unittest import mock
+        from urllib.parse import parse_qs, urlparse
+        from club.sources import Langfuse
+        calls = []
+
+        def fake(url, headers=None, timeout=8):
+            calls.append(url)
+            q = parse_qs(urlparse(url).query)
+            if q.get("isRootObservation") == ["true"]:
+                return {"data": [{"traceId": "t1", "id": "r1", "startTime": iso(T0 - 20), "input": '"q"', "output": None}], "meta": {}}
+            if "cursor" not in q:
+                return {"data": [{"traceId": "t1", "id": "s1", "name": "retrieve", "startTime": iso(T0 - 10)}], "meta": {"cursor": "abc"}}
+            return {"data": [{"traceId": "t1", "id": "s2", "name": "answer", "startTime": iso(T0 - 2)}], "meta": {}}
+        cfg = {"LANGFUSE_HOST": "https://cloud.langfuse.com", "LANGFUSE_PUBLIC_KEY": "pk", "LANGFUSE_SECRET_KEY": "sk"}
+        with mock.patch("club.net.get_json", side_effect=fake), mock.patch("club.sources.time.time", return_value=T0):
+            agents = Langfuse().poll(cfg)
+        self.assertTrue(all(urlparse(u).path == "/api/public/v2/observations" for u in calls))
+        self.assertTrue(all("fromStartTime" in parse_qs(urlparse(u).query) and "toStartTime" in parse_qs(urlparse(u).query) for u in calls))
+        self.assertEqual(len(calls), 3)                 # roots + two pages (cursor followed)
+        self.assertEqual(agents["langfuse:t1"]["title"], "answer")
+
     def test_small_helpers(self):
         self.assertEqual(trace_task("hello"), "hello")
         self.assertEqual(credit_text({"limit_remaining": 2.7227, "limit": 3, "usage": 0.2773}, {"total_credits": 5, "total_usage": 0.7624}),

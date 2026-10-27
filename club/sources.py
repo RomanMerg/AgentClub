@@ -12,7 +12,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from . import net
 from .config import ROOT
@@ -187,36 +187,85 @@ def map_trace(trace: dict, observations: list[dict], now: float, prefix: str, cr
             "sub": model or (latest or {}).get("type", "").lower()}
 
 
+LF_PAGE_LIMIT = 1000
+LF_MAX_PAGES = 5
+
+
+def parse_io(raw: object) -> object:
+    """v2 returns input/output as raw strings; JSON when it parses, the plain string otherwise, None when empty."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return raw
+    return raw
+
+
+def runs_from_v2(roots: list[dict], rows: list[dict]) -> list[tuple[dict, list[dict]]]:
+    """Langfuse v4 has no trace objects: rebuild each run from its root observation plus all its rows.
+
+    The root observation (no parent) carries the run's overall input (the customer's question) and its
+    output, which is set once the run has answered. Newest runs first.
+    """
+    by_trace: dict[str, list[dict]] = {}
+    for r in rows:
+        by_trace.setdefault(str(r.get("traceId")), []).append(r)
+    runs = []
+    for root in sorted(roots, key=lambda o: parse_ts(o.get("startTime")) or 0, reverse=True):
+        tid = str(root.get("traceId"))
+        trace = {"id": tid, "timestamp": root.get("startTime"), "name": root.get("traceName") or root.get("name"),
+                 "input": parse_io(root.get("input")), "output": parse_io(root.get("output"))}
+        runs.append((trace, by_trace.get(tid, [root])))
+    return runs
+
+
 class Langfuse:
+    """LangGraph runs from Langfuse via GET /api/public/v2/observations (the v1 /traces and /observations
+    endpoints are deprecated and stop on Langfuse Cloud on 2026-11-16)."""
+
     id = "langfuse"
     interval = 10
 
     def __init__(self) -> None:
-        self.final: dict[str, tuple[dict, list[dict]]] = {}
         self.credit: str | None = None
 
     def enabled(self, cfg: dict) -> bool:
         return bool(cfg.get("LANGFUSE_PUBLIC_KEY") and cfg.get("LANGFUSE_SECRET_KEY") and cfg.get("LANGFUSE_HOST"))
 
+    @staticmethod
+    def _observations(host: str, headers: dict, params: dict, pages: int = LF_MAX_PAGES) -> list[dict]:
+        """All pages of a bounded v2 query (results come newest first; follow meta.cursor)."""
+        rows: list[dict] = []
+        cursor = None
+        for _ in range(pages):
+            q = {**params, **({"cursor": cursor} if cursor else {})}
+            page = net.get_json(f"{host}/api/public/v2/observations?" + urlencode(q), headers) or {}
+            rows.extend(page.get("data") or [])
+            cursor = (page.get("meta") or {}).get("cursor")
+            if not cursor:
+                break
+        return rows
+
     def poll(self, cfg: dict) -> dict[str, dict]:
         host = cfg["LANGFUSE_HOST"].rstrip("/")
         headers = {"Authorization": net.basic_auth(cfg["LANGFUSE_PUBLIC_KEY"], cfg["LANGFUSE_SECRET_KEY"])}
         now = time.time()
-        since = datetime.fromtimestamp(now - LF_WINDOW_S, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        traces = (net.get_json(f"{host}/api/public/traces?limit=20&fromTimestamp={quote(since)}", headers) or {}).get("data") or []
-        traces = sorted(traces, key=lambda t: parse_ts(t.get("timestamp")) or 0, reverse=True)[:LF_MAX_RUNS]
+        iso = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        window = {"fromStartTime": iso(now - LF_WINDOW_S), "toStartTime": iso(now + 60), "limit": LF_PAGE_LIMIT}
+        # 1) the newest runs' root observations, with their question and answer
+        roots = self._observations(host, headers, {**window, "isRootObservation": "true", "limit": LF_MAX_RUNS,
+                                                   "fields": "core,basic,io,trace_context"}, pages=1)[:LF_MAX_RUNS]
+        if not roots:
+            return {}
+        # 2) every step in the window, without input/output to keep it light
+        rows = self._observations(host, headers, {**window, "fields": "core,basic,model,usage"})
         agents: dict[str, dict] = {}
-        for tr in traces:
-            tid = str(tr.get("id"))
-            if tid in self.final:
-                tr, obs = self.final[tid]
-            else:
-                obs = (net.get_json(f"{host}/api/public/observations?traceId={quote(tid)}&limit=100", headers) or {}).get("data") or []
-                if tr.get("output") is not None:
-                    self.final[tid] = (tr, obs)
-            agent = map_trace(tr, obs, now, cfg.get("LANGFUSE_PREFIX") or "langgraph", self.credit)
+        for trace, obs in runs_from_v2(roots, rows):
+            agent = map_trace(trace, obs, now, cfg.get("LANGFUSE_PREFIX") or "langgraph", self.credit)
             if agent:
-                agents[f"langfuse:{tid}"] = agent
+                agents[f"langfuse:{trace['id']}"] = agent
         return agents
 
     def detail(self, agents: dict) -> str:
